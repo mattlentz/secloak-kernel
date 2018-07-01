@@ -31,29 +31,16 @@
 #include <types_ext.h>
 #include <kernel/interrupt.h>
 
-#define GIC_DIST_REG_SIZE	0x10000
-#define GIC_CPU_REG_SIZE	0x10000
-
 struct gic_data {
 	vaddr_t gicc_base;
 	vaddr_t gicd_base;
 	size_t max_it;
-	struct itr_chip chip;
+	struct irq_chip chip;
+	struct irq_chip chip_gpc;
 };
 
-/*
- * The two gic_init_* functions initializes the struct gic_data which is
- * then used by the other functions.
- */
+void gic_cpu_init(void);
+void gic_it_handle(void);
+void gic_dump_state(void);
 
-void gic_init(struct gic_data *gd, paddr_t gicc_base, paddr_t gicd_base);
-/* initial base address only */
-void gic_init_base_addr(struct gic_data *gd, vaddr_t gicc_base,
-			vaddr_t gicd_base);
-/* initial cpu if only, mainly use for secondary cpu setup cpu interface */
-void gic_cpu_init(struct gic_data *gd);
-
-void gic_it_handle(struct gic_data *gd);
-
-void gic_dump_state(struct gic_data *gd);
 #endif /*__DRIVERS_GIC_H*/

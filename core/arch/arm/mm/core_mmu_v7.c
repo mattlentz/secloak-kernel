@@ -186,7 +186,7 @@
 #define TTB_L1_MASK		(~(L1_ALIGNMENT - 1))
 
 #ifndef MAX_XLAT_TABLES
-#define MAX_XLAT_TABLES		4
+#define MAX_XLAT_TABLES		8
 #endif
 
 enum desc_type {
@@ -227,15 +227,6 @@ static paddr_t core_mmu_get_main_ttb_pa(void)
 static vaddr_t core_mmu_get_ul1_ttb_va(void)
 {
 	return (vaddr_t)main_mmu_ul1_ttb[thread_get_id()];
-}
-
-static paddr_t core_mmu_get_ul1_ttb_pa(void)
-{
-	paddr_t pa = virt_to_phys((void *)core_mmu_get_ul1_ttb_va());
-
-	if (pa & ~TTB_UL1_MASK)
-		panic("invalid user l1 table");
-	return pa;
 }
 
 static void *core_mmu_alloc_l2(size_t size)
@@ -473,20 +464,6 @@ void core_mmu_get_user_pgdir(struct core_mmu_table_info *pgd_info)
 	pgd_info->num_entries = NUM_UL1_ENTRIES;
 }
 
-void core_mmu_create_user_map(struct user_ta_ctx *utc,
-			      struct core_mmu_user_map *map)
-{
-	struct core_mmu_table_info dir_info;
-
-	COMPILE_TIME_ASSERT(L2_TBL_SIZE == PGT_SIZE);
-
-	core_mmu_get_user_pgdir(&dir_info);
-	memset(dir_info.table, 0, dir_info.num_entries * sizeof(uint32_t));
-	core_mmu_populate_user_map(&dir_info, utc);
-	map->ttbr0 = core_mmu_get_ul1_ttb_pa() | TEE_MMU_DEFAULT_ATTRS;
-	map->ctxid = utc->context & 0xff;
-}
-
 bool core_mmu_find_table(vaddr_t va, unsigned max_level,
 		struct core_mmu_table_info *tbl_info)
 {
@@ -504,56 +481,6 @@ bool core_mmu_find_table(vaddr_t va, unsigned max_level,
 
 		core_mmu_set_info_table(tbl_info, 2, n << SECTION_SHIFT, l2tbl);
 	}
-	return true;
-}
-
-bool core_mmu_divide_block(struct core_mmu_table_info *tbl_info,
-			   unsigned int idx)
-{
-	uint32_t *new_table;
-	uint32_t *entry;
-	uint32_t new_table_desc;
-	paddr_t paddr;
-	uint32_t attr;
-	int i;
-	bool flush_tlb;
-
-	if (tbl_info->level != 1)
-		return false;
-
-	if (idx >= NUM_L1_ENTRIES)
-		return false;
-
-	new_table = core_mmu_alloc_l2(NUM_L2_ENTRIES * SMALL_PAGE_SIZE);
-	if (!new_table)
-		return false;
-
-	entry = (uint32_t *)tbl_info->table + idx;
-	assert(!*entry || get_desc_type(1, *entry) == DESC_TYPE_SECTION);
-
-	/* We need to flush TLBs only if there already was some mapping */
-	flush_tlb = *entry;
-
-	new_table_desc = SECTION_PT_PT | (uint32_t)new_table;
-	if (*entry & SECTION_NOTSECURE)
-		new_table_desc |= SECTION_PT_NOTSECURE;
-
-	/* store attributes of original block */
-	attr = desc_to_mattr(1, *entry);
-	paddr = *entry & ~SECTION_MASK;
-
-	/* Fill new xlat table with entries pointing to the same memory */
-	for (i = 0; i < NUM_L2_ENTRIES; i++) {
-		*new_table = paddr | mattr_to_desc(tbl_info->level + 1, attr);
-		paddr += SMALL_PAGE_SIZE;
-		new_table++;
-	}
-
-	/* Update descriptor at current level */
-	*entry = new_table_desc;
-
-	if (flush_tlb)
-		core_tlb_maintenance(TLBINV_UNIFIEDTLB, 0);
 	return true;
 }
 
@@ -615,43 +542,6 @@ void core_mmu_get_user_va_range(vaddr_t *base, size_t *size)
 
 	if (size)
 		*size = (NUM_UL1_ENTRIES - 1) << SECTION_SHIFT;
-}
-
-void core_mmu_get_user_map(struct core_mmu_user_map *map)
-{
-	map->ttbr0 = read_ttbr0();
-	map->ctxid = read_contextidr();
-}
-
-void core_mmu_set_user_map(struct core_mmu_user_map *map)
-{
-	uint32_t exceptions = thread_mask_exceptions(THREAD_EXCP_ALL);
-
-	/*
-	 * Update the reserved Context ID and TTBR0
-	 */
-
-	dsb();  /* ARM erratum 754322 */
-	write_contextidr(0);
-	isb();
-
-	if (map) {
-		write_ttbr0(map->ttbr0);
-		isb();
-		write_contextidr(map->ctxid);
-	} else {
-		write_ttbr0(read_ttbr1());
-	}
-	isb();
-	core_tlb_maintenance(TLBINV_UNIFIEDTLB, 0);
-
-	/* Restore interrupts */
-	thread_unmask_exceptions(exceptions);
-}
-
-bool core_mmu_user_mapping_is_active(void)
-{
-	return read_ttbr0() != read_ttbr1();
 }
 
 static void print_mmap_area(const struct tee_mmap_region *mm __maybe_unused,

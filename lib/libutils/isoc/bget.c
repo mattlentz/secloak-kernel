@@ -468,7 +468,7 @@ extern char *sprintf();               /* Sun includes don't define sprintf */
 #endif
 
 #include <assert.h>
-#include <memory.h>
+#include <string.h>
 
 #ifdef BufDump			      /* BufDump implies DumpData */
 #ifndef DumpData
@@ -657,7 +657,6 @@ void *bget(requested_size)
 		    numget++;		  /* Increment number of bget() calls */
 #endif
 		    buf = (void *) ((((char *) ba) + sizeof(struct bhead)));
-		    tag_asan_alloced(buf, size);
 		    return buf;
 		} else {
 		    struct bhead *ba;
@@ -686,7 +685,6 @@ void *bget(requested_size)
 
 		    /* Give user buffer starting at queue links. */
 		    buf =  (void *) &(b->ql);
-		    tag_asan_alloced(buf, size);
 		    return buf;
 		}
 	    }
@@ -729,7 +727,6 @@ void *bget(requested_size)
 		numdget++;	      /* Direct bget() call count */
 #endif
 		buf =  (void *) (bdh + 1);
-		tag_asan_alloced(buf, size);
 		return buf;
 	    }
 
@@ -828,7 +825,6 @@ void brel(buf)
   void *buf;
 {
     struct bfhead *b, *bn;
-    bufsize bs;
 
     b = BFH(((char *) buf) - sizeof(struct bhead));
 #ifdef BufStats
@@ -854,7 +850,6 @@ void brel(buf)
 	bs = bdh->tsize - sizeof(struct bdhead);
 	assert(relfcn != NULL);
 	(*relfcn)((void *) bdh);      /* Release it directly. */
-	tag_asan_free(buf, bs);
 	return;
     }
 #endif /* BECtl */
@@ -866,7 +861,6 @@ void brel(buf)
 	bn = NULL;
     }
     assert(b->bh.bsize < 0);
-    bs = -b->bh.bsize;
 
     /*	Back pointer in next buffer must be zero, indicating the
 	same thing: */
@@ -971,7 +965,6 @@ void brel(buf)
 #endif /* BufStats */
     }
 #endif /* BECtl */
-    tag_asan_free(buf, bs);
 }
 
 #ifdef BECtl

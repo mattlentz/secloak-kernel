@@ -34,13 +34,11 @@
 #include <kernel/tz_ssvce_pl310.h>
 #include <mm/core_mmu.h>
 #include <platform_config.h>
-
-register_phys_mem(MEM_AREA_IO_SEC, SRC_BASE, CORE_MMU_DEVICE_SIZE);
+#include <drivers/tzc380.h>
+#include <kernel/panic.h>
 
 void plat_cpu_reset_late(void)
 {
-	uintptr_t addr;
-
 	if (!get_core_pos()) {
 		/* primary core */
 #if defined(CFG_BOOT_SYNC_CPU)
@@ -61,19 +59,12 @@ void plat_cpu_reset_late(void)
 		write32(read32(SCU_BASE + SCU_CTRL) | 0x1,
 			SCU_BASE + SCU_CTRL);
 
-		/* configure imx6 CSU */
-
-		/* first grant all peripherals */
-		for (addr = CSU_BASE + CSU_CSL_START;
-			 addr != CSU_BASE + CSU_CSL_END;
-			 addr += 4)
-			write32(CSU_ACCESS_ALL, addr);
-
-		/* lock the settings */
-		for (addr = CSU_BASE + CSU_CSL_START;
-			 addr != CSU_BASE + CSU_CSL_END;
-			 addr += 4)
-			write32(read32(addr) | CSU_SETTING_LOCK, addr);
+		/* Protect region of the secure kernel with the TZASC */
+		tzc_init((vaddr_t)TZC380_BASE);
+		tzc_configure_region(0, 0x00000000, TZC_ATTR_SP_ALL);
+		tzc_configure_region(1, CFG_TEE_RAM_START, TZC_ATTR_SP_S_RW | TZC_ATTR_REGION_SIZE(TZC_REGION_SIZE_64M) | TZC_ATTR_REGION_ENABLE);
+		tzc_configure_region(2, CFG_FBMEM_START, TZC_ATTR_SP_S_RW_NS_R | TZC_ATTR_REGION_SIZE(TZC_REGION_SIZE_8M) | TZC_ATTR_REGION_ENABLE);
+		tzc_set_action(TZC_ACTION_ERR);
 	}
 }
 

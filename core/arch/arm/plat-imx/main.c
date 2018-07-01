@@ -31,6 +31,7 @@
 #include <console.h>
 #include <drivers/gic.h>
 #include <drivers/imx_uart.h>
+#include <drivers/imx_csu.h>
 #include <io.h>
 #include <kernel/generic_boot.h>
 #include <kernel/misc.h>
@@ -39,18 +40,13 @@
 #include <mm/core_mmu.h>
 #include <mm/core_memprot.h>
 #include <platform_config.h>
-#include <stdint.h>
-#include <sm/optee_smc.h>
-#include <tee/entry_fast.h>
-#include <tee/entry_std.h>
-
+#include <secloak/entry.h>
 
 static void main_fiq(void);
-static struct gic_data gic_data;
 
 static const struct thread_handlers handlers = {
-	.std_smc = tee_entry_std,
-	.fast_smc = tee_entry_fast,
+	.std_smc = cloak_entry,
+	.fast_smc = cloak_entry,
 	.nintr = main_fiq,
 	.cpu_on = pm_panic,
 	.cpu_off = pm_panic,
@@ -60,10 +56,8 @@ static const struct thread_handlers handlers = {
 	.system_reset = pm_panic,
 };
 
-static struct imx_uart_data console_data;
-
-register_phys_mem(MEM_AREA_IO_NSEC, CONSOLE_UART_BASE, CORE_MMU_DEVICE_SIZE);
-register_phys_mem(MEM_AREA_IO_SEC, GIC_BASE, CORE_MMU_DEVICE_SIZE);
+register_phys_mem(MEM_AREA_IO_SEC, 0x00100000, 0x03300000);
+register_phys_mem(MEM_AREA_IO_SEC, CFG_FBMEM_START, CFG_FBMEM_SIZE);
 
 const struct thread_handlers *generic_boot_get_handlers(void)
 {
@@ -72,34 +66,24 @@ const struct thread_handlers *generic_boot_get_handlers(void)
 
 static void main_fiq(void)
 {
-	gic_it_handle(&gic_data);
+	gic_it_handle();
 }
 
+static struct imx_uart_data console_data;
 void console_init(void)
 {
 	imx_uart_init(&console_data, CONSOLE_UART_BASE);
 	register_serial_console(&console_data.chip);
 }
 
-void main_init_gic(void)
+void main_init_primary(void)
 {
-	vaddr_t gicc_base;
-	vaddr_t gicd_base;
-
-	gicc_base = core_mmu_get_va(GIC_BASE + GICC_OFFSET, MEM_AREA_IO_SEC);
-	gicd_base = core_mmu_get_va(GIC_BASE + GICD_OFFSET, MEM_AREA_IO_SEC);
-
-	if (!gicc_base || !gicd_base)
-		panic();
-
-	/* Initialize GIC */
-	gic_init(&gic_data, gicc_base, gicd_base);
-	itr_init(&gic_data.chip);
+	csu_init(CSU_BASE);
 }
 
 #if defined(CFG_MX6Q) || defined(CFG_MX6D) || defined(CFG_MX6DL)
-void main_secondary_init_gic(void)
+void main_init_secondary(void)
 {
-	gic_cpu_init(&gic_data);
+	gic_cpu_init();
 }
 #endif

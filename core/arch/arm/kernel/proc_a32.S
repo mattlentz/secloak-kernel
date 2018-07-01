@@ -34,7 +34,6 @@
 #include <arm32_macros.S>
 #include <asm.S>
 #include <keep.h>
-#include <kernel/unwind.h>
 
 /*
  * void cpu_mmu_enable(void) - enable MMU
@@ -43,7 +42,6 @@
  * An DSB and ISB insures MMUs is enabled before routine returns
  */
 FUNC cpu_mmu_enable , :
-UNWIND(	.fnstart)
 	/* Invalidate TLB */
 	write_tlbiall
 
@@ -56,13 +54,11 @@ UNWIND(	.fnstart)
 	isb
 
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC cpu_mmu_enable
 KEEP_PAGER cpu_mmu_enable
 
 /* void cpu_mmu_enable_icache(void) - enable instruction cache */
 FUNC cpu_mmu_enable_icache , :
-UNWIND(	.fnstart)
 	/* Invalidate instruction cache and branch predictor */
 	write_iciallu
 	write_bpiall
@@ -76,13 +72,11 @@ UNWIND(	.fnstart)
 	isb
 
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC cpu_mmu_enable_icache
 KEEP_PAGER cpu_mmu_enable_icache
 
 /* void cpu_mmu_enable_dcache(void) - enable data cache */
 FUNC cpu_mmu_enable_dcache , :
-UNWIND(	.fnstart)
 	read_sctlr r0
 	orr	r0, r0, #SCTLR_C
 	write_sctlr r0
@@ -91,6 +85,5 @@ UNWIND(	.fnstart)
 	isb
 
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC cpu_mmu_enable_dcache
 KEEP_PAGER cpu_mmu_enable_dcache

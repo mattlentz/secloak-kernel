@@ -90,6 +90,7 @@ void tzc_init(vaddr_t base)
 			   BUILD_CONFIG_AW_MASK) + 1;
 	tzc.num_regions = ((tzc_build >> BUILD_CONFIG_NR_SHIFT) &
 			   BUILD_CONFIG_NR_MASK) + 1;
+	DMSG("Num regions %08x %d\n",tzc_build, tzc.num_regions);
 }
 
 static uint32_t addr_low(vaddr_t addr)
@@ -158,8 +159,8 @@ void tzc_dump_state(void)
 	uint32_t temp_32reg, temp_32reg_h;
 
 	DMSG("enter");
-	DMSG("security_inversion_en %x\n",
-	     read32(tzc.base + SECURITY_INV_EN_OFF));
+	DMSG("speculation_control security_inversion_en %08x %08x\n",
+	     read32(tzc.base + SPECULATION_CTRL_OFF),read32(tzc.base + SECURITY_INV_EN_OFF));
 	for (n = 0; n <= REGION_MAX; n++) {
 		temp_32reg = tzc_read_region_attributes(tzc.base, n);
 		if (!(temp_32reg & TZC_ATTR_REGION_EN_MASK))

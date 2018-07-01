@@ -28,6 +28,7 @@
 #define TEE_MMU_TYPES_H
 
 #include <stdint.h>
+#include <types_ext.h>
 
 #define TEE_MATTR_VALID_BLOCK		(1 << 0)
 #define TEE_MATTR_HIDDEN_BLOCK		(1 << 1)

@@ -32,9 +32,6 @@
 #ifndef ASM
 
 #include <mm/core_mmu.h>
-#include <mm/pgt_cache.h>
-#include <kernel/vfp.h>
-#include <kernel/mutex.h>
 #include <kernel/thread.h>
 
 enum thread_state {
@@ -68,103 +65,28 @@ struct thread_ctx_regs {
 };
 #endif /*ARM32*/
 
-#ifdef ARM64
-struct thread_ctx_regs {
-	uint64_t sp;
-	uint64_t pc;
-	uint64_t cpsr;
-	uint64_t x[31];
-};
-#endif /*ARM64*/
-
-#ifdef ARM64
-struct thread_user_mode_rec {
-	uint64_t exit_status0_ptr;
-	uint64_t exit_status1_ptr;
-	uint64_t x[31 - 19]; /* x19..x30 */
-};
-#endif /*ARM64*/
-
-#ifdef CFG_WITH_VFP
-struct thread_vfp_state {
-	bool ns_saved;
-	bool sec_saved;
-	bool sec_lazy_saved;
-	struct vfp_state ns;
-	struct vfp_state sec;
-	struct thread_user_vfp_state *uvfp;
-};
-
-#endif /*CFG_WITH_VFP*/
-
 struct thread_ctx {
 	struct thread_ctx_regs regs;
 	enum thread_state state;
 	vaddr_t stack_va_end;
 	uint32_t hyp_clnt_id;
 	uint32_t flags;
-	struct core_mmu_user_map user_map;
-	bool have_user_map;
-#ifdef ARM64
-	vaddr_t kern_sp;	/* Saved kernel SP during user TA execution */
-#endif
-#ifdef CFG_WITH_VFP
-	struct thread_vfp_state vfp_state;
-#endif
 	void *rpc_arg;
 	uint64_t rpc_carg;
-	struct mutex_head mutexes;
 	struct thread_specific_data tsd;
 };
 
-#ifdef ARM64
-/*
- * struct thread_core_local need to have alignment suitable for a stack
- * pointer since SP_EL1 points to this
- */
-#define THREAD_CORE_LOCAL_ALIGNED __aligned(16)
-#else
 #define THREAD_CORE_LOCAL_ALIGNED
-#endif
 
 struct thread_core_local {
 	vaddr_t tmp_stack_va_end;
 	int curr_thread;
-#ifdef ARM64
-	uint32_t flags;
-	vaddr_t abt_stack_va_end;
-	uint64_t x[4];
-#endif
 #ifdef CFG_TEE_CORE_DEBUG
 	unsigned int locked_count; /* Number of spinlocks held */
 #endif
 } THREAD_CORE_LOCAL_ALIGNED;
 
 #endif /*ASM*/
-
-#ifdef ARM64
-#ifdef CFG_WITH_VFP
-#define THREAD_VFP_STATE_SIZE				\
-	(16 + (16 * 32 + 16) * 2 + 16)
-#else
-#define THREAD_VFP_STATE_SIZE				0
-#endif
-
-/* Describes the flags field of struct thread_core_local */
-#define THREAD_CLF_SAVED_SHIFT			4
-#define THREAD_CLF_CURR_SHIFT			0
-#define THREAD_CLF_MASK				0xf
-#define THREAD_CLF_TMP_SHIFT			0
-#define THREAD_CLF_ABORT_SHIFT			1
-#define THREAD_CLF_IRQ_SHIFT			2
-#define THREAD_CLF_FIQ_SHIFT			3
-
-#define THREAD_CLF_TMP				(1 << THREAD_CLF_TMP_SHIFT)
-#define THREAD_CLF_ABORT			(1 << THREAD_CLF_ABORT_SHIFT)
-#define THREAD_CLF_IRQ				(1 << THREAD_CLF_IRQ_SHIFT)
-#define THREAD_CLF_FIQ				(1 << THREAD_CLF_FIQ_SHIFT)
-
-#endif /*ARM64*/
 
 #ifndef ASM
 extern const void *stack_tmp_export;

@@ -27,7 +27,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <console.h>
-#include <drivers/imx_uart.h>
 #include <io.h>
 #include <kernel/generic_boot.h>
 #include <kernel/panic.h>
@@ -38,8 +37,6 @@
 #include <stdint.h>
 #include <sm/optee_smc.h>
 #include <sm/psci.h>
-#include <tee/entry_std.h>
-#include <tee/entry_fast.h>
 
 int psci_cpu_on(uint32_t core_idx, uint32_t entry,
 		uint32_t context_id __attribute__((unused)))

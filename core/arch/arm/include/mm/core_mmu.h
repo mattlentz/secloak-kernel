@@ -30,7 +30,8 @@
 
 #include <assert.h>
 #include <compiler.h>
-#include <kernel/user_ta.h>
+#include <compiler.h>
+#include <tee_api_types.h>
 #include <mm/tee_mmu_types.h>
 #include <platform_config.h>
 #include <types_ext.h>
@@ -182,42 +183,10 @@ void core_init_mmu_regs(void);
 
 bool core_mmu_place_tee_ram_at_top(paddr_t paddr);
 
-#ifdef CFG_WITH_LPAE
-/*
- * struct core_mmu_user_map - current user mapping register state
- * @user_map:	physical address of user map translation table
- * @asid:	ASID for the user map
- *
- * Note that this struct should be treated as an opaque struct since
- * the content depends on descriptor table format.
- */
-struct core_mmu_user_map {
-	uint64_t user_map;
-	uint32_t asid;
-};
-#else
-/*
- * struct core_mmu_user_map - current user mapping register state
- * @ttbr0:	content of ttbr0
- * @ctxid:	content of contextidr
- *
- * Note that this struct should be treated as an opaque struct since
- * the content depends on descriptor table format.
- */
-struct core_mmu_user_map {
-	uint32_t ttbr0;
-	uint32_t ctxid;
-};
-#endif
-
-#ifdef CFG_WITH_LPAE
-bool core_mmu_user_va_range_is_defined(void);
-#else
 static inline bool core_mmu_user_va_range_is_defined(void)
 {
 	return true;
 }
-#endif
 
 /*
  * core_mmu_get_user_va_range() - Return range of user va space
@@ -263,26 +232,6 @@ enum core_mmu_fault core_mmu_get_fault_type(uint32_t fault_descr);
 uint32_t core_mmu_type_to_attr(enum teecore_memtypes t);
 
 /*
- * core_mmu_create_user_map() - Create user space mapping
- * @utc:	Pointer to user TA context
- * @map:	MMU configuration to use when activating this VA space
- */
-void core_mmu_create_user_map(struct user_ta_ctx *utc,
-			      struct core_mmu_user_map *map);
-/*
- * core_mmu_get_user_map() - Reads current MMU configuration for user VA space
- * @map:	MMU configuration for current user VA space.
- */
-void core_mmu_get_user_map(struct core_mmu_user_map *map);
-
-/*
- * core_mmu_set_user_map() - Set new MMU configuration for user VA space
- * @map:	If NULL will disable user VA space, if not NULL the user
- *		VA space to activate.
- */
-void core_mmu_set_user_map(struct core_mmu_user_map *map);
-
-/*
  * struct core_mmu_table_info - Properties for a translation table
  * @table:	Pointer to translation table
  * @va_base:	VA base address of the transaltion table
@@ -307,15 +256,6 @@ struct core_mmu_table_info {
  */
 bool core_mmu_find_table(vaddr_t va, unsigned max_level,
 		struct core_mmu_table_info *tbl_info);
-
-/*
- * core_mmu_divide_block() - divide larger block/section into smaller ones
- * @tbl_info:	table where target record located
- * @idx:	index of record
- * @return true if function was able to divide block, false on error
- */
-bool core_mmu_divide_block(struct core_mmu_table_info *tbl_info,
-			   unsigned int idx);
 
 void core_mmu_set_entry_primitive(void *table, size_t level, size_t idx,
 				  paddr_t pa, uint32_t attr);
@@ -412,17 +352,13 @@ TEE_Result core_mmu_map_pages(vaddr_t vstart, paddr_t *pages, size_t num_pages,
 void core_mmu_unmap_pages(vaddr_t vstart, size_t num_pages);
 
 /*
- * core_mmu_user_mapping_is_active() - Report if user mapping is active
- * @returns true if a user VA space is active, false if user VA space is
- *          inactive.
- */
-bool core_mmu_user_mapping_is_active(void);
-
-/*
  * core_mmu_mattr_is_ok() - Check that supplied mem attributes can be used
  * @returns true if the attributes can be used, false if not.
  */
 bool core_mmu_mattr_is_ok(uint32_t mattr);
+
+const struct tee_mmap_region *core_mmu_find_map_by_type(enum teecore_memtypes type);
+const struct tee_mmap_region *core_mmu_find_map_by_type_and_pa(enum teecore_memtypes type, paddr_t pa);
 
 void core_mmu_get_mem_by_type(enum teecore_memtypes type, vaddr_t *s,
 			      vaddr_t *e);
@@ -460,20 +396,6 @@ enum cache_op {
 	DCACHE_AREA_CLEAN_INV,
 };
 
-/* L1/L2 cache maintenance */
-TEE_Result cache_op_inner(enum cache_op op, void *va, size_t len);
-#ifdef CFG_PL310
-TEE_Result cache_op_outer(enum cache_op op, paddr_t pa, size_t len);
-#else
-static inline TEE_Result cache_op_outer(enum cache_op op __unused,
-						paddr_t pa __unused,
-						size_t len __unused)
-{
-	/* Nothing to do about L2 Cache Maintenance when no PL310 */
-	return TEE_SUCCESS;
-}
-#endif
-
 /* Check cpu mmu enabled or not */
 bool cpu_mmu_enabled(void);
 
@@ -483,10 +405,5 @@ bool cpu_mmu_enabled(void);
  * always present.
  */
 bool core_mmu_nsec_ddr_is_defined(void);
-
-#ifdef CFG_SECURE_DATA_PATH
-/* Alloc and fill SDP memory objects table - table is NULL terminated */
-struct mobj **core_sdp_mem_create_mobjs(void);
-#endif
 
 #endif /* CORE_MMU_H */

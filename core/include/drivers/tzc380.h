@@ -129,6 +129,8 @@ enum tzc_action {
 				TZC_SP_NS_R) << TZC_ATTR_SP_SHIFT)
 #define TZC_ATTR_SP_S_RW	((TZC_SP_S_W | TZC_SP_S_R) << \
 				 TZC_ATTR_SP_SHIFT)
+#define TZC_ATTR_SP_S_RW_NS_R	((TZC_SP_S_W | TZC_SP_S_R | TZC_SP_NS_R) << \
+				 TZC_ATTR_SP_SHIFT)
 #define TZC_ATTR_SP_NS_RW	((TZC_SP_NS_W | TZC_SP_NS_R) << \
 				TZC_ATTR_SP_SHIFT)
 

@@ -29,8 +29,6 @@
 #include <arm.h>
 #include <asm.S>
 #include <keep.h>
-#include <kernel/asan.h>
-#include <kernel/unwind.h>
 #include <platform_config.h>
 #include <sm/optee_smc.h>
 #include <sm/teesmc_opteed.h>
@@ -53,8 +51,6 @@ panic_boot_file:
  */
 .section .text.init
 LOCAL_FUNC __assert_flat_mapped_range , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	push	{ r4-r6, lr }
 	mov	r4, r0
 	mov	r5, r1
@@ -76,7 +72,6 @@ UNWIND(	.cantunwind)
 	bl	__do_panic
 	b	.		/* should NOT return */
 1:	pop	{ r4-r6, pc }
-UNWIND(	.fnend)
 END_FUNC __assert_flat_mapped_range
 
 	/* panic if mmu is enable and vaddr != paddr (scratch lr) */
@@ -89,9 +84,7 @@ END_FUNC __assert_flat_mapped_range
 
 .weak plat_cpu_reset_early
 FUNC plat_cpu_reset_early , :
-UNWIND(	.fnstart)
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC plat_cpu_reset_early
 KEEP_PAGER plat_cpu_reset_early
 
@@ -180,9 +173,6 @@ KEEP_INIT _start
 	.endm
 
 LOCAL_FUNC reset , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
-
 	bootargs_entry
 
 	/* Enable alignment checks and disable data and instruction cache. */
@@ -214,7 +204,6 @@ UNWIND(	.cantunwind)
 	beq	reset_primary
 	b	reset_secondary
 #endif
-UNWIND(	.fnend)
 END_FUNC reset
 
 	/*
@@ -285,36 +274,7 @@ END_FUNC reset
 #endif
 
 LOCAL_FUNC reset_primary , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
-
 	/* preserve r4-r7: bootargs */
-
-#ifdef CFG_WITH_PAGER
-	/*
-	 * Move init code into correct location and move hashes to a
-	 * temporary safe location until the heap is initialized.
-	 *
-	 * The binary is built as:
-	 * [Pager code, rodata and data] : In correct location
-	 * [Init code and rodata] : Should be copied to __init_start
-	 * [Hashes] : Should be saved before initializing pager
-	 *
-	 */
-	ldr	r0, =__init_start	/* dst */
-	ldr	r1, =__data_end 	/* src */
-	ldr	r2, =__tmp_hashes_end	/* dst limit */
-	/* Copy backwards (as memmove) in case we're overlapping */
-	sub	r2, r2, r0		/* len */
-	add	r0, r0, r2
-	add	r1, r1, r2
-	ldr	r2, =__init_start
-copy_init:
-	ldmdb	r1!, {r3, r8-r12, sp}
-	stmdb	r0!, {r3, r8-r12, sp}
-	cmp	r0, r2
-	bgt	copy_init
-#endif
 
 	/*
 	 * Clear .bss, this code obviously depends on the linker keeping
@@ -328,31 +288,6 @@ clear_bss:
 	stmia	r0!, {r2, r3}
 	cmp	r0, r1
 	bls	clear_bss
-
-#ifdef CFG_CORE_SANITIZE_KADDRESS
-	/* First initialize the entire shadow area with no access */
-	ldr	r0, =__asan_shadow_start	/* start */
-	ldr	r1, =__asan_shadow_end	/* limit */
-	mov	r2, #ASAN_DATA_RED_ZONE
-shadow_no_access:
-	str	r2, [r0], #4
-	cmp	r0, r1
-	bls	shadow_no_access
-
-	/* Mark the entire stack area as OK */
-	ldr	r2, =CFG_ASAN_SHADOW_OFFSET
-	ldr	r0, =__nozi_stack_start	/* start */
-	lsr	r0, r0, #ASAN_BLOCK_SHIFT
-	add	r0, r0, r2
-	ldr	r1, =__nozi_stack_end	/* limit */
-	lsr	r1, r1, #ASAN_BLOCK_SHIFT
-	add	r1, r1, r2
-	mov	r2, #0
-shadow_stack_access_ok:
-	strb	r2, [r0], #1
-	cmp	r0, r1
-	bls	shadow_stack_access_ok
-#endif
 
 	set_sp
 
@@ -373,11 +308,7 @@ shadow_stack_access_ok:
 	 * invalidate memory not used by OP-TEE since we may invalidate
 	 * entries used by for instance ARM Trusted Firmware.
 	 */
-#ifdef CFG_WITH_PAGER
-	inval_cache_vrange(__text_start, __tmp_hashes_end)
-#else
 	inval_cache_vrange(__text_start, __end)
-#endif
 
 #ifdef CFG_PL310
 	/* Enable PL310 if not yet enabled */
@@ -402,11 +333,7 @@ shadow_stack_access_ok:
 	 * they have turned on their D-cache, clean and invalidate the
 	 * D-cache before exiting to normal world.
 	 */
-#ifdef CFG_WITH_PAGER
-	flush_cache_vrange(__text_start, __init_end)
-#else
 	flush_cache_vrange(__text_start, __end)
-#endif
 
 	/* release secondary boot cores and sync with them */
 	cpu_is_ready
@@ -442,21 +369,16 @@ shadow_stack_access_ok:
 	mov	r0, #TEESMC_OPTEED_RETURN_ENTRY_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC reset_primary
 
 
 LOCAL_FUNC unhandled_cpu , :
-UNWIND(	.fnstart)
 	wfi
 	b	unhandled_cpu
-UNWIND(	.fnend)
 END_FUNC unhandled_cpu
 
 #if defined(CFG_WITH_ARM_TRUSTED_FW)
 FUNC cpu_on_handler , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	mov	r4, r0
 	mov	r5, r1
 	mov	r6, lr
@@ -487,15 +409,11 @@ UNWIND(	.cantunwind)
 	bl	generic_boot_cpu_on_handler
 
 	bx	r6
-UNWIND(	.fnend)
 END_FUNC cpu_on_handler
 
 #else /* defined(CFG_WITH_ARM_TRUSTED_FW) */
 
 LOCAL_FUNC reset_secondary , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
-
 	wait_primary
 
 	set_sp
@@ -529,6 +447,5 @@ UNWIND(	.cantunwind)
 	mov	r4, #0
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC reset_secondary
 #endif /* defined(CFG_WITH_ARM_TRUSTED_FW) */

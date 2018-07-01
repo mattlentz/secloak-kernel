@@ -31,16 +31,15 @@
 #include <asm-defines.h>
 #include <asm.S>
 #include <keep.h>
-#include <kernel/unwind.h>
 #include <sm/optee_smc.h>
 #include <sm/teesmc_opteed.h>
 #include <sm/teesmc_opteed_macros.h>
+#include <platform_config.h>
+
 
 	.section .text.sm_asm
 
 FUNC sm_save_modes_regs , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	/* User mode registers has to be saved from system mode */
 	cps	#CPSR_MODE_SYS
 	stm	r0!, {sp, lr}
@@ -67,13 +66,10 @@ UNWIND(	.cantunwind)
 
 	cps	#CPSR_MODE_MON
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC sm_save_modes_regs
 
 /* Restores the mode specific registers */
 FUNC sm_restore_modes_regs , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	/* User mode registers has to be saved from system mode */
 	cps	#CPSR_MODE_SYS
 	ldm	r0!, {sp, lr}
@@ -100,7 +96,6 @@ UNWIND(	.cantunwind)
 
 	cps	#CPSR_MODE_MON
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC sm_restore_modes_regs
 
 /*
@@ -111,8 +106,6 @@ END_FUNC sm_restore_modes_regs
  * Async abort has to be masked while using stack_tmp.
  */
 LOCAL_FUNC sm_smc_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	srsdb	sp!, #CPSR_MODE_MON
 	push	{r0-r7}
 
@@ -159,7 +152,7 @@ UNWIND(	.cantunwind)
 
 	/* Update SCR */
 	read_scr r0
-	orr	r0, r0, #(SCR_NS | SCR_FIQ) /* Set NS and FIQ bit in SCR */
+	orr	r0, r0, #(SCR_NS | SCR_FIQ | SCR_EA) /* Set NS, FIQ and EA bit in SCR */
 	write_scr r0
 
 	add	sp, sp, #(SM_CTX_NSEC + SM_NSEC_CTX_R0)
@@ -173,7 +166,7 @@ UNWIND(	.cantunwind)
 	 */
 	sub	sp, sp, #(SM_CTX_NSEC + SM_NSEC_CTX_R0)
 
-	bic	r1, r1, #(SCR_NS | SCR_FIQ) /* Clear NS and FIQ bit in SCR */
+	bic	r1, r1, #(SCR_NS | SCR_FIQ | SCR_EA) /* Clear NS, FIQ and EA bit in SCR */
 	write_scr r1
 
 	add	r0, sp, #(SM_CTX_NSEC + SM_NSEC_CTX_R8)
@@ -192,7 +185,6 @@ UNWIND(	.cantunwind)
 .sm_exit:
 	pop	{r0-r7}
 	rfefd	sp!
-UNWIND(	.fnend)
 END_FUNC sm_smc_entry
 
 /*
@@ -203,8 +195,6 @@ END_FUNC sm_smc_entry
  * from FIQ.
  */
 LOCAL_FUNC sm_fiq_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	/* FIQ has a +4 offset for lr compared to preferred return address */
 	sub	lr, lr, #4
 	/* sp points just past struct sm_sec_ctx */
@@ -222,7 +212,7 @@ UNWIND(	.cantunwind)
 
 	/* Update SCR */
 	read_scr r1
-	bic	r1, r1, #(SCR_NS | SCR_FIQ) /* Clear NS and FIQ bit in SCR */
+	bic	r1, r1, #(SCR_NS | SCR_FIQ | SCR_EA) /* Clear NS, FIQ and EA bit in SCR */
 	write_scr r1
 
 	/* Save non-secure context */
@@ -241,27 +231,106 @@ UNWIND(	.cantunwind)
 	add	sp, sp, #(SM_CTX_SEC + SM_SEC_CTX_MON_LR)
 
 	rfefd	sp!
-UNWIND(	.fnend)
 END_FUNC sm_fiq_entry
+
+LOCAL_FUNC sm_da_entry , :
+	sub	lr, lr, #4
+
+	/* Before this instruction, SP points just past struct sm_sec_ctx */
+	srsdb	sp!, #CPSR_MODE_MON
+
+	/* Save non-secure r0-r7 into the context */
+	push {r0-r7}
+
+	/* Clear the exclusive monitor */
+	clrex
+	
+  /* Update SCR */
+	read_scr r1
+	bic	r1, r1, #(SCR_NS | SCR_FIQ | SCR_EA) /* Clear NS, FIQ and EA bit in SCR*/
+	write_scr r1
+
+	/* Copy SVC mode LR into the context */
+	cps #CPSR_MODE_SVC
+	mov r0, lr
+	cps #CPSR_MODE_MON
+	push {r0}
+
+	/* Moving stack pointer to the head of the context structure */
+	sub	sp, sp, #(SM_CTX_NSEC + SM_NSEC_CTX_LR)
+	
+	/* Save non-secure r8-r12 into the context */
+	add	r0, sp, #(SM_CTX_NSEC + SM_NSEC_CTX_R8)
+	stm	r0, {r8-r12}
+
+	/* R6 = Page offset mask */
+	ldr r6, =0xFFF
+	
+	/* R0 = SM context pointer */
+	mov	r0, sp
+
+	/* R1 = Data fault status register */
+	mrc p15, 0, r1, c5, c0, 0 /* Read */
+	
+	/* R2 = Physical address of abort */
+	mrc	p15, 0, r2, c6, c0, 0 /* Read DFAR */
+	and r3, r2, r6 /* Store offset in page */
+	bic r2, r2, r6 /* Clearing offset in page */
+	mcr	p15, 0, r2, c7, c8, 4 /* Translate VA to PA */
+	mrc	p15, 0, r4, c7, c4, 0 /* Read PA */
+	bic r4, r4, r6
+	orr r2, r3, r4 /* Compute PA with offset */
+
+	/* R3 = Physical address of instruction that caused data abort */
+	sub r3, lr, #4 /* Compute from LR value */
+	and r4, r3, r6 /* Store offset in page */
+	bic r3, r3, r6 /* Clearing offset in page */
+	mcr	p15, 0, r3, c7, c8, 4 /* Translate VA to PA */
+	mrc	p15, 0, r5, c7, c4, 0 /* Read PA */
+	bic r5, r5, r6
+	orr r3, r4, r5 /* Compute PA with offset */
+
+	/* Handle the emulation as necessary */
+	bl emu_handle
+
+	/* Restore non-secure r8-r12 from the context */
+	add r0, sp, #(SM_CTX_NSEC + SM_NSEC_CTX_R8)
+	ldm	r0, {r8-r12}
+
+	/* Moving stack pointer to the non-secure LR */
+	add	sp, sp, #(SM_CTX_NSEC + SM_NSEC_CTX_LR)
+
+	/* Restore SVC mode LR from the context */
+	pop {r0}
+	cps #CPSR_MODE_SVC
+	mov lr, r0
+	cps #CPSR_MODE_MON
+
+	/* Update SCR */
+	read_scr r0
+	orr	r0, r0, #(SCR_NS | SCR_FIQ | SCR_EA) /* Set NS, FIQ and EA bit in SCR */
+	write_scr r0
+
+	/* Restore non-secure r0-r7 from the context */
+	pop	{r0-r7}
+
+	rfefd	sp!	
+END_FUNC sm_da_entry
 
         .align	5
 LOCAL_FUNC sm_vect_table , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	b	.		/* Reset			*/
 	b	.		/* Undefined instruction	*/
 	b	sm_smc_entry	/* Secure monitor call		*/
 	b	.		/* Prefetch abort		*/
-	b	.		/* Data abort			*/
+	b	sm_da_entry	/* Data abort			*/
 	b	.		/* Reserved			*/
 	b	.		/* IRQ				*/
 	b	sm_fiq_entry	/* FIQ				*/
-UNWIND(	.fnend)
 END_FUNC sm_vect_table
 
 /* void sm_init(vaddr_t stack_pointer); */
 FUNC sm_init , :
-UNWIND(	.fnstart)
 	/* Set monitor stack */
 	mrs	r1, cpsr
 	cps	#CPSR_MODE_MON

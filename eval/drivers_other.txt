@@ -1,0 +1,7 @@
+../core/drivers/gic.c
+../core/drivers/tzc380.c
+../core/drivers/imx_uart.c
+../core/include/drivers/gic.h
+../core/include/drivers/tzc380.h
+../core/include/drivers/imx_uart.h
+../core/include/drivers/serial.h

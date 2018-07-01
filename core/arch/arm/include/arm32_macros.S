@@ -62,6 +62,14 @@
 	mcr	p15, 0, \reg, c1, c1, 0
 	.endm
 
+	.macro read_vcr reg
+	mrc	p15, 0, \reg, c1, c1, 3
+	.endm
+
+	.macro write_vcr reg
+	mcr	p15, 0, \reg, c1, c1, 3
+	.endm
+
 	.macro write_nsacr reg
 	mcr	p15, 0, \reg, c1, c1, 2
 	.endm

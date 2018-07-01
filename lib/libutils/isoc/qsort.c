@@ -27,7 +27,6 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-#include <sys/types.h>
 #include <stdlib.h>
 static __inline char
 	*med3(char *, char *, char *, int (*)(const void *, const void *));

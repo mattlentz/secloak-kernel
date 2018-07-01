@@ -29,54 +29,66 @@
 
 #include <types_ext.h>
 #include <sys/queue.h>
+#include <libfdt.h>
 
 #define ITRF_TRIGGER_LEVEL	(1 << 0)
 
-struct itr_chip {
-	const struct itr_ops *ops;
-};
-
-struct itr_ops {
-	void (*add)(struct itr_chip *chip, size_t it, uint32_t flags);
-	void (*enable)(struct itr_chip *chip, size_t it);
-	void (*disable)(struct itr_chip *chip, size_t it);
-	void (*raise_pi)(struct itr_chip *chip, size_t it);
-	void (*raise_sgi)(struct itr_chip *chip, size_t it,
-		uint8_t cpu_mask);
-	void (*set_affinity)(struct itr_chip *chip, size_t it,
-		uint8_t cpu_mask);
-};
-
-enum itr_return {
+enum irq_return {
 	ITRR_NONE,
 	ITRR_HANDLED,
+	ITRR_HANDLED_PASS,
+	ITRR_HANDLED_DEFAULT
 };
 
-struct itr_handler {
-	size_t it;
-	uint32_t flags;
-	enum itr_return (*handler)(struct itr_handler *h);
+struct irq_handler {
 	void *data;
-	SLIST_ENTRY(itr_handler) link;
+	enum irq_return (*handle)(struct irq_handler *h);
 };
 
-void itr_init(struct itr_chip *data);
-void itr_handle(size_t it);
+struct irq_chip;
+struct irq_chip_ops {
+	int32_t (*map)(struct irq_chip *chip, const fdt32_t *dt_spec, size_t *irq, uint32_t *flags);
+	int32_t (*add)(struct irq_chip *chip, size_t irq, uint32_t flags);
+	int32_t (*remove)(struct irq_chip *chip, size_t irq);
+	int32_t (*enable)(struct irq_chip *chip, size_t irq);
+	int32_t (*disable)(struct irq_chip *chip, size_t irq);
+	int32_t (*secure)(struct irq_chip *chip, size_t irq);
+	int32_t (*unsecure)(struct irq_chip *chip, size_t irq);
+	int32_t (*raise)(struct irq_chip *chip, size_t irq);
+	int32_t (*raise_sgi)(struct irq_chip *chip, size_t irq, uint8_t cpu_mask);
+	int32_t (*set_affinity)(struct irq_chip *chip, size_t irq, uint8_t cpu_mask);
+};
 
-void itr_add(struct itr_handler *handler);
-void itr_enable(size_t it);
-void itr_disable(size_t it);
-/* raise the Peripheral Interrupt corresponding to the interrupt ID */
-void itr_raise_pi(size_t it);
-/*
- * raise the Software Generated Interrupt corresponding to the interrupt ID,
- * the cpu_mask represents which cpu interface to forward.
- */
-void itr_raise_sgi(size_t it, uint8_t cpu_mask);
-/*
- * let corresponding interrupt forward to the cpu interface
- * according to the cpu_mask.
- */
-void itr_set_affinity(size_t it, uint8_t cpu_mask);
+struct irq_chip {
+	struct device *dev;
+	const struct irq_chip_ops *ops;
+	size_t num_irqs;
+	bool default_handler;
+	struct irq_handler **handlers;
+	void *data;
+	SLIST_ENTRY(irq_chip) entry;
+};
+
+struct irq_desc {
+	struct irq_chip *chip;
+	size_t irq;
+};
+
+int32_t irq_construct_chip(struct irq_chip *chip, struct device *dev, const struct irq_chip_ops *ops, size_t num_irqs, void *data, bool default_handler);
+void irq_destruct_chip(struct irq_chip *chip);
+struct irq_chip *irq_find_chip(struct device *dev);
+
+enum irq_return irq_handle(struct irq_chip *chip, size_t irq);
+
+int32_t irq_map(struct irq_chip *chip, const fdt32_t *dt_spec, size_t *irq, uint32_t *flags);
+int32_t irq_add(struct irq_desc *desc, uint32_t flags, struct irq_handler *handler);
+int32_t irq_remove(struct irq_desc *desc);
+int32_t irq_enable(struct irq_desc *desc);
+int32_t irq_disable(struct irq_desc *desc);
+int32_t irq_secure(struct irq_desc *desc);
+int32_t irq_unsecure(struct irq_desc *desc);
+int32_t irq_raise(struct irq_desc *desc);
+int32_t irq_raise_sgi(struct irq_desc *desc, uint8_t cpu_mask);
+int32_t irq_set_affinity(struct irq_desc *desc, uint8_t cpu_mask);
 
 #endif /*__KERNEL_INTERRUPT_H*/

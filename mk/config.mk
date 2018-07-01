@@ -40,19 +40,19 @@ WARNS ?= 3
 
 # If y, enable debug mode of the tee firmware (CPU restart, Core Status
 # verbose, panic & assert verbose). When disable, NDEBUG directive is defined.
-CFG_TEE_CORE_DEBUG ?= n
+CFG_TEE_CORE_DEBUG ?= y
 
 # Max level of the tee core traces. 0 means disable, 4 is max.
 # Supported values: 0 (no traces) to 4 (all traces)
 # If CFG_TEE_DRV_DEBUGFS is set, the level of traces to print can be
 # dynamically changes via debugfs in the range 1 => CFG_TEE_CORE_LOG_LEVEL
-CFG_TEE_CORE_LOG_LEVEL ?= 1
+CFG_TEE_CORE_LOG_LEVEL ?= 4
 
 # TA and TEECore log level
 # Supported values: 0 (no traces) to 4 (all traces)
 # If CFG_TEE_DRV_DEBUGFS is set, the level of traces to print can be
 # dynamically changes via debugfs in the range 1 => CFG_TEE_TA_LOG_LEVEL
-CFG_TEE_TA_LOG_LEVEL ?= 1
+CFG_TEE_TA_LOG_LEVEL ?= 4
 
 # TA enablement
 # When defined to "y", TA traces are output according to
@@ -117,7 +117,7 @@ CFG_TEE_FW_MANUFACTURER ?= FW_MAN_UNDEF
 # provides the actual storage.
 # This is the default FS when enabled (i.e., the one used when
 # TEE_STORAGE_PRIVATE is passed to the trusted storage API)
-CFG_REE_FS ?= y
+CFG_REE_FS ?= n
 
 # RPMB file system support
 CFG_RPMB_FS ?= n
@@ -153,7 +153,7 @@ CFG_LIBUTILS_WITH_ISOC ?= y
 # ARM64: EABI doesn't define a soft-float ABI, everything is hard-float (or
 #	 nothing with ` -mgeneral-regs-only`)
 # With CFG_TA_FLOAT_SUPPORT enabled TA code is free use floating point types
-CFG_TA_FLOAT_SUPPORT ?= y
+CFG_TA_FLOAT_SUPPORT ?= n
 
 # Stack unwinding: print a stack dump to the console on abort
 # If CFG_UNWIND is enabled, both the kernel and user mode call stacks can be
@@ -163,16 +163,16 @@ CFG_TA_FLOAT_SUPPORT ?= y
 # Similarly, TAs have to be compiled with -funwind-tables (default when the
 # option is set) otherwise they can't be unwound.
 ifeq ($(CFG_TEE_CORE_DEBUG),y)
-CFG_UNWIND ?= y
+CFG_UNWIND ?= n
 endif
 
 # Enable support for dynamically loaded user TAs
-CFG_WITH_USER_TA ?= y
+CFG_WITH_USER_TA ?= n
 
 # Load user TAs from the REE filesystem via tee-supplicant
 # There is currently no other alternative, but you may want to disable this in
 # case you implement your own TA store
-CFG_REE_FS_TA ?= y
+CFG_REE_FS_TA ?= n
 
 # Enable paging, requires SRAM, can't be enabled by default
 CFG_WITH_PAGER ?= n
@@ -201,7 +201,7 @@ CFG_DT ?= n
 CFG_DTB_MAX_SIZE ?= 0x10000
 
 # Enable static TA and core self tests
-CFG_TEE_CORE_EMBED_INTERNAL_TESTS ?= y
+CFG_TEE_CORE_EMBED_INTERNAL_TESTS ?= n
 
 # This option enables OP-TEE to respond to SMP boot request: the Rich OS
 # issues this to request OP-TEE to release secondaries cores out of reset,
@@ -230,7 +230,7 @@ endif
 
 # CFG_GP_SOCKETS
 # Enable Global Platform Sockets support
-CFG_GP_SOCKETS ?= y
+CFG_GP_SOCKETS ?= n
 
 # Enable Secure Data Path support in OP-TEE core (TA may be invoked with
 # invocation parameters referring to specific secure memories).

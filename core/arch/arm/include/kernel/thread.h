@@ -33,10 +33,7 @@
 #include <arm.h>
 #include <types_ext.h>
 #include <compiler.h>
-#include <optee_msg.h>
-#include <kernel/mutex.h>
-#include <kernel/vfp.h>
-#include <mm/pgt_cache.h>
+#include <sys/queue.h>
 #endif
 
 #define THREAD_ID_0		0
@@ -61,17 +58,10 @@ extern struct thread_vector_table thread_vector_table;
 struct thread_specific_data {
 	TAILQ_HEAD(, tee_ta_session) sess_stack;
 	struct tee_ta_ctx *ctx;
-	struct pgt_cache pgt_cache;
 	void *rpc_fs_payload;
 	paddr_t rpc_fs_payload_pa;
 	uint64_t rpc_fs_payload_cookie;
 	size_t rpc_fs_payload_size;
-};
-
-struct thread_user_vfp_state {
-	struct vfp_state vfp;
-	bool lazy_saved;
-	bool saved;
 };
 
 #ifdef ARM32
@@ -86,18 +76,6 @@ struct thread_smc_args {
 	uint32_t a7;	/* Hypervisor Client ID */
 };
 #endif /*ARM32*/
-#ifdef ARM64
-struct thread_smc_args {
-	uint64_t a0;	/* SMC function ID */
-	uint64_t a1;	/* Parameter */
-	uint64_t a2;	/* Parameter */
-	uint64_t a3;	/* Thread ID when returning from RPC */
-	uint64_t a4;	/* Not used */
-	uint64_t a5;	/* Not used */
-	uint64_t a6;	/* Not used */
-	uint64_t a7;	/* Hypervisor Client ID */
-};
-#endif /*ARM64*/
 
 #ifdef ARM32
 struct thread_abort_regs {
@@ -121,44 +99,6 @@ struct thread_abort_regs {
 	uint32_t ip;
 };
 #endif /*ARM32*/
-#ifdef ARM64
-struct thread_abort_regs {
-	uint64_t x0;	/* r0_usr */
-	uint64_t x1;	/* r1_usr */
-	uint64_t x2;	/* r2_usr */
-	uint64_t x3;	/* r3_usr */
-	uint64_t x4;	/* r4_usr */
-	uint64_t x5;	/* r5_usr */
-	uint64_t x6;	/* r6_usr */
-	uint64_t x7;	/* r7_usr */
-	uint64_t x8;	/* r8_usr */
-	uint64_t x9;	/* r9_usr */
-	uint64_t x10;	/* r10_usr */
-	uint64_t x11;	/* r11_usr */
-	uint64_t x12;	/* r12_usr */
-	uint64_t x13;	/* r13/sp_usr */
-	uint64_t x14;	/* r14/lr_usr */
-	uint64_t x15;
-	uint64_t x16;
-	uint64_t x17;
-	uint64_t x18;
-	uint64_t x19;
-	uint64_t x20;
-	uint64_t x21;
-	uint64_t x22;
-	uint64_t x23;
-	uint64_t x24;
-	uint64_t x25;
-	uint64_t x26;
-	uint64_t x27;
-	uint64_t x28;
-	uint64_t x29;
-	uint64_t x30;
-	uint64_t elr;
-	uint64_t spsr;
-	uint64_t sp_el0;
-};
-#endif /*ARM64*/
 
 #ifdef ARM32
 struct thread_svc_regs {
@@ -174,30 +114,6 @@ struct thread_svc_regs {
 	uint32_t lr;
 };
 #endif /*ARM32*/
-#ifdef ARM64
-struct thread_svc_regs {
-	uint64_t elr;
-	uint64_t spsr;
-	uint64_t x0;	/* r0_usr */
-	uint64_t x1;	/* r1_usr */
-	uint64_t x2;	/* r2_usr */
-	uint64_t x3;	/* r3_usr */
-	uint64_t x4;	/* r4_usr */
-	uint64_t x5;	/* r5_usr */
-	uint64_t x6;	/* r6_usr */
-	uint64_t x7;	/* r7_usr */
-	uint64_t x8;	/* r8_usr */
-	uint64_t x9;	/* r9_usr */
-	uint64_t x10;	/* r10_usr */
-	uint64_t x11;	/* r11_usr */
-	uint64_t x12;	/* r12_usr */
-	uint64_t x13;	/* r13/sp_usr */
-	uint64_t x14;	/* r14/lr_usr */
-	uint64_t x30;
-	uint64_t sp_el0;
-	uint64_t pad;
-} __aligned(16);
-#endif /*ARM64*/
 #endif /*ASM*/
 
 #ifndef ASM
@@ -349,86 +265,6 @@ static inline bool thread_foreign_intr_disabled(void)
 	return !!(thread_get_exceptions() & THREAD_EXCP_FOREIGN_INTR);
 }
 
-#ifdef CFG_WITH_VFP
-/*
- * thread_kernel_enable_vfp() - Temporarily enables usage of VFP
- *
- * Foreign interrupts are masked while VFP is enabled. User space must not be
- * entered before thread_kernel_disable_vfp() has been called to disable VFP
- * and restore the foreign interrupt status.
- *
- * This function may only be called from an active thread context and may
- * not be called again before thread_kernel_disable_vfp() has been called.
- *
- * VFP state is saved as needed.
- *
- * Returns a state variable that should be passed to
- * thread_kernel_disable_vfp().
- */
-uint32_t thread_kernel_enable_vfp(void);
-
-/*
- * thread_kernel_disable_vfp() - Disables usage of VFP
- * @state:	state variable returned by thread_kernel_enable_vfp()
- *
- * Disables usage of VFP and restores foreign interrupt status after a call to
- * thread_kernel_enable_vfp().
- *
- * This function may only be called after a call to
- * thread_kernel_enable_vfp().
- */
-void thread_kernel_disable_vfp(uint32_t state);
-
-/*
- * thread_kernel_save_vfp() - Saves kernel vfp state if enabled
- */
-void thread_kernel_save_vfp(void);
-
-/*
- * thread_kernel_save_vfp() - Restores kernel vfp state
- */
-void thread_kernel_restore_vfp(void);
-
-/*
- * thread_user_enable_vfp() - Enables vfp for user mode usage
- * @uvfp:	pointer to where to save the vfp state if needed
- */
-void thread_user_enable_vfp(struct thread_user_vfp_state *uvfp);
-#else /*CFG_WITH_VFP*/
-static inline void thread_kernel_save_vfp(void)
-{
-}
-
-static inline void thread_kernel_restore_vfp(void)
-{
-}
-#endif /*CFG_WITH_VFP*/
-
-/*
- * thread_user_save_vfp() - Saves the user vfp state if enabled
- */
-#ifdef CFG_WITH_VFP
-void thread_user_save_vfp(void);
-#else
-static inline void thread_user_save_vfp(void)
-{
-}
-#endif
-
-/*
- * thread_user_clear_vfp() - Clears the vfp state
- * @uvfp:	pointer to saved state to clear
- */
-#ifdef CFG_WITH_VFP
-void thread_user_clear_vfp(struct thread_user_vfp_state *uvfp);
-#else
-static inline void thread_user_clear_vfp(
-			struct thread_user_vfp_state *uvfp __unused)
-{
-}
-#endif
-
-
 /*
  * thread_enter_user_mode() - Enters user mode
  * @a0:		Passed in r/x0 for user_func
@@ -474,19 +310,6 @@ uint32_t thread_enter_user_mode(unsigned long a0, unsigned long a1,
 void thread_unwind_user_mode(uint32_t ret, uint32_t exit_status0,
 		uint32_t exit_status1);
 
-#ifdef ARM64
-/*
- * thread_get_saved_thread_sp() - Returns the saved sp of current thread
- *
- * When switching from the thread stack pointer the value is stored
- * separately in the current thread context. This function returns this
- * saved value.
- *
- * @returns stack pointer
- */
-vaddr_t thread_get_saved_thread_sp(void);
-#endif /*ARM64*/
-
 /*
  * Returns the start address (bottom) of the stack for the current thread,
  * zero if there is no current thread.
@@ -496,78 +319,6 @@ vaddr_t thread_stack_start(void);
 
 /* Returns the stack size for the current thread */
 size_t thread_stack_size(void);
-
-/*
- * Adds a mutex to the list of held mutexes for current thread
- * Requires foreign interrupts to be disabled.
- */
-void thread_add_mutex(struct mutex *m);
-
-/*
- * Removes a mutex from the list of held mutexes for current thread
- * Requires foreign interrupts to be disabled.
- */
-void thread_rem_mutex(struct mutex *m);
-
-/*
- * Disables and empties the prealloc RPC cache one reference at a time. If
- * all threads are idle this function returns true and a cookie of one shm
- * object which was removed from the cache. When the cache is empty *cookie
- * is set to 0 and the cache is disabled else a valid cookie value. If one
- * thread isn't idle this function returns false.
- */
-bool thread_disable_prealloc_rpc_cache(uint64_t *cookie);
-
-/*
- * Enabled the prealloc RPC cache. If all threads are idle the cache is
- * enabled and this function returns true. If one thread isn't idle this
- * function return false.
- */
-bool thread_enable_prealloc_rpc_cache(void);
-
-/**
- * Allocates data for struct optee_msg_arg.
- *
- * @size:	size in bytes of struct optee_msg_arg
- * @arg:	returned physcial pointer to a struct optee_msg_arg buffer,
- *		0 if allocation failed.
- * @cookie:	returned cookie used when freeing the buffer
- */
-void thread_rpc_alloc_arg(size_t size, paddr_t *arg, uint64_t *cookie);
-
-/**
- * Free physical memory previously allocated with thread_rpc_alloc_arg()
- *
- * @cookie:	cookie received when allocating the buffer
- */
-void thread_rpc_free_arg(uint64_t cookie);
-
-/**
- * Allocates data for payload buffers.
- *
- * @size:	size in bytes of payload buffer
- * @payload:	returned physcial pointer to payload buffer, 0 if allocation
- *		failed.
- * @cookie:	returned cookie used when freeing the buffer
- */
-void thread_rpc_alloc_payload(size_t size, paddr_t *payload, uint64_t *cookie);
-
-/**
- * Free physical memory previously allocated with thread_rpc_alloc_payload()
- *
- * @cookie:	cookie received when allocating the buffer
- */
-void thread_rpc_free_payload(uint64_t cookie);
-
-/**
- * Does an RPC using a preallocated argument buffer
- * @cmd: RPC cmd
- * @num_params: number of parameters (max 2)
- * @params: RPC parameters
- * @returns RPC return value
- */
-uint32_t thread_rpc_cmd(uint32_t cmd, size_t num_params,
-		struct optee_msg_param *params);
 
 #endif /*ASM*/
 

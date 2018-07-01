@@ -58,8 +58,4 @@
 #include <arm32.h>
 #endif
 
-#ifdef ARM64
-#include <arm64.h>
-#endif
-
 #endif /*ARM_H*/

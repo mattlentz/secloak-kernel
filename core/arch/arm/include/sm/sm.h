@@ -65,6 +65,8 @@ struct sm_nsec_ctx {
 	uint32_t r11;
 	uint32_t r12;
 
+	uint32_t lr;
+
 	uint32_t r0;
 	uint32_t r1;
 	uint32_t r2;
@@ -82,6 +84,14 @@ struct sm_nsec_ctx {
 struct sm_sec_ctx {
 	struct sm_mode_regs mode_regs;
 
+	uint32_t r8;
+	uint32_t r9;
+	uint32_t r10;
+	uint32_t r11;
+	uint32_t r12;
+
+	uint32_t lr;
+	
 	uint32_t r0;
 	uint32_t r1;
 	uint32_t r2;

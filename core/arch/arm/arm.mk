@@ -49,7 +49,7 @@ endif
 
 core-platform-cppflags	+= -I$(arch-dir)/include
 core-platform-subdirs += \
-	$(addprefix $(arch-dir)/, kernel mm tee pta) $(platform-dir)
+	$(addprefix $(arch-dir)/, kernel mm secloak) $(platform-dir)
 
 ifneq ($(CFG_WITH_ARM_TRUSTED_FW),y)
 core-platform-subdirs += $(arch-dir)/sm
@@ -61,7 +61,7 @@ arm32-platform-cppflags += -DARM32=1 -D__ILP32__=1
 platform-cflags-generic ?= -g -ffunction-sections -fdata-sections -pipe
 platform-aflags-generic ?= -g -pipe
 
-arm32-platform-cflags-no-hard-float ?= -mno-apcs-float -mfloat-abi=soft
+arm32-platform-cflags-no-hard-float ?= -mno-apcs-float 
 arm32-platform-cflags-hard-float ?= -mfloat-abi=hard -funsafe-math-optimizations
 arm32-platform-cflags-generic ?= -mthumb -mthumb-interwork \
 			-fno-short-enums -fno-common -mno-unaligned-access

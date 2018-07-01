@@ -38,7 +38,6 @@
 
 #include <kernel/tz_proc_def.h>
 #include <kernel/tz_ssvce_def.h>
-#include <kernel/unwind.h>
 
 	.section .text.ssvce
 
@@ -53,15 +52,12 @@
  * void secure_mmu_unifiedtlbinvall(void);
  */
 FUNC secure_mmu_unifiedtlbinvall , :
-UNWIND(	.fnstart)
-
 	write_tlbiallis
 
 	DSB
 	ISB
 
 	MOV     PC, LR
-UNWIND(	.fnend)
 END_FUNC secure_mmu_unifiedtlbinvall
 
 /*
@@ -70,8 +66,6 @@ END_FUNC secure_mmu_unifiedtlbinvall
  * Combine VA and current ASID, and invalidate matching TLB
  */
 FUNC secure_mmu_unifiedtlbinvbymva , :
-UNWIND(	.fnstart)
-
 	b .	@ Wrong code to force fix/check the routine before using it
 
 	MRC     p15, 0, R1, c13, c0, 1		/* Read CP15 Context ID Register (CONTEXTIDR) */
@@ -84,7 +78,6 @@ UNWIND(	.fnstart)
 	ISB
 
 	MOV     PC, LR
-UNWIND(	.fnend)
 END_FUNC secure_mmu_unifiedtlbinvbymva
 
 /*
@@ -93,7 +86,6 @@ END_FUNC secure_mmu_unifiedtlbinvbymva
  * Invalidate TLB matching current ASID
  */
 FUNC secure_mmu_unifiedtlbinv_curasid , :
-UNWIND(	.fnstart)
 	read_contextidr r0
 	and     r0, r0, #0xff               /* Get current ASID */
 	/* Invalidate unified TLB by ASID Inner Sharable */
@@ -101,7 +93,6 @@ UNWIND(	.fnstart)
 	dsb
 	isb
 	mov	pc, lr
-UNWIND(	.fnend)
 END_FUNC secure_mmu_unifiedtlbinv_curasid
 
 /*
@@ -110,22 +101,18 @@ END_FUNC secure_mmu_unifiedtlbinv_curasid
  * Invalidate TLB matching current ASID
  */
 FUNC secure_mmu_unifiedtlbinv_byasid , :
-UNWIND(	.fnstart)
 	and     r0, r0, #0xff               /* Get ASID */
 	/* Invalidate unified TLB by ASID Inner Sharable */
 	write_tlbiasidis r0
 	dsb
 	isb
 	mov	pc, lr
-UNWIND(	.fnend)
 END_FUNC secure_mmu_unifiedtlbinv_byasid
 
 /*
  * void arm_cl1_d_cleanbysetway(void)
  */
 FUNC arm_cl1_d_cleanbysetway , :
-UNWIND(	.fnstart)
-
 	MOV     R0, #0                  @ ; write the Cache Size selection register to be
 	MCR     p15, 2, R0, c0, c0, 0   @ ; sure we address the data cache
 	ISB                             @ ; ISB to sync the change to the CacheSizeID reg
@@ -145,12 +132,9 @@ _cl_nextLine:
 
 	DSB                             @ ; synchronise
 	MOV PC, LR
-UNWIND(	.fnend)
 END_FUNC arm_cl1_d_cleanbysetway
 
 FUNC arm_cl1_d_invbysetway , :
-UNWIND(	.fnstart)
-
 	MOV     R0, #0                  @ ; write the Cache Size selection register to be
 	MCR     p15, 2, R0, c0, c0, 0   @ ; sure we address the data cache
 	ISB                             @ ; ISB to sync the change to the CacheSizeID reg
@@ -171,12 +155,9 @@ _inv_nextLine:
 
 	DSB                             @ ; synchronise
 	MOV      PC, LR
-UNWIND(	.fnend)
 END_FUNC arm_cl1_d_invbysetway
 
 FUNC arm_cl1_d_cleaninvbysetway , :
-UNWIND(	.fnstart)
-
 	MOV     R0, #0                  @ ; write the Cache Size selection register to be
 	MCR     p15, 2, R0, c0, c0, 0   @ ; sure we address the data cache
 	ISB                             @ ; ISB to sync the change to the CacheSizeID reg
@@ -196,15 +177,12 @@ _cli_nextLine:
 
 	DSB                             @ ; synchronise
 	MOV PC, LR
-UNWIND(	.fnend)
 END_FUNC arm_cl1_d_cleaninvbysetway
 
 /*
  * void arm_cl1_d_cleanbyva(void *s, void *e);
  */
 FUNC arm_cl1_d_cleanbyva , :
-UNWIND(	.fnstart)
-
 	CMP     R0, R1                  @ ; check that end >= start. Otherwise return.
 	BHI     _cl_area_exit
 
@@ -223,15 +201,12 @@ _cl_area_exit:
 	
 	DSB                             @ ; synchronise
 	MOV PC, LR
-UNWIND(	.fnend)
 END_FUNC arm_cl1_d_cleanbyva
 
 /*
  * void arm_cl1_d_invbyva(void *s, void *e);
  */
 FUNC arm_cl1_d_invbyva , :
-UNWIND(	.fnstart)
-
 	CMP     R0, R1                      @ ; check that end >= start. Otherwise return.
 	BHI     _inv_area_dcache_exit
 	
@@ -250,15 +225,12 @@ _inv_area_dcache_nl:
 _inv_area_dcache_exit:
 	DSB
 	MOV PC, LR
-UNWIND(	.fnend)
 END_FUNC arm_cl1_d_invbyva
 
 /*
  * void arm_cl1_d_cleaninvbyva(void *s, void *e);
  */
 FUNC arm_cl1_d_cleaninvbyva , :
-UNWIND(	.fnstart)
-
 	CMP     R0, R1                  @ ; check that end >= start. Otherwise return.
 	BHI     _cli_area_exit
 
@@ -276,7 +248,6 @@ _cli_area_nextLine:
 _cli_area_exit:
 	DSB                             @ ; synchronise
 	MOV PC, LR
-UNWIND(	.fnend)
 END_FUNC arm_cl1_d_cleaninvbyva
 
 /*
@@ -286,8 +257,6 @@ END_FUNC arm_cl1_d_cleaninvbyva
  * It also invalidates the BTAC.
  */
 FUNC arm_cl1_i_inv_all , :
-UNWIND(	.fnstart)
-
     /* Invalidate Entire Instruction Cache */
     write_icialluis
     DSB
@@ -299,7 +268,6 @@ UNWIND(	.fnstart)
     ISB                             /* by the instructions rigth after the ISB */
 
     BX      LR
-UNWIND(	.fnend)
 END_FUNC arm_cl1_i_inv_all
 
 /*
@@ -309,8 +277,6 @@ END_FUNC arm_cl1_i_inv_all
  * It also invalidates the BTAC.
  */
 FUNC arm_cl1_i_inv , :
-UNWIND(	.fnstart)
-
     CMP     R0, R1                              /* Check that end >= start. Otherwise return. */
     BHI     _inv_icache_exit
 
@@ -330,5 +296,4 @@ _inv_icache_nextLine:
 
 _inv_icache_exit:
     BX      LR
-UNWIND(	.fnend)
 END_FUNC arm_cl1_i_inv

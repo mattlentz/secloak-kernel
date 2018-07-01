@@ -1,0 +1,3 @@
+../core/arch/arm/include/tee/image_headers.h
+../core/arch/arm/kernel/kern.ld.S
+../core/arch/arm/plat-imx/kern.ld.S

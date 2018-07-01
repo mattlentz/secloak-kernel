@@ -50,8 +50,6 @@ ifneq ($(CFG_TEE_CORE_DEBUG),y)
 cppflags$(sm)  += -DNDEBUG
 endif
 
-cppflags$(sm)	+= -Ilib/libutee/include
-
 # Tell all libraries and sub-directories (included below) that we have a
 # configuration file
 
@@ -77,15 +75,6 @@ $(conf-mk-file):  FORCE
 base-prefix := $(sm)-
 libname = utils
 libdir = lib/libutils
-include mk/lib.mk
-
-libname = mpa
-libdir = lib/libmpa
-include mk/lib.mk
-base-prefix :=
-
-libname = tomcrypt
-libdir = core/lib/libtomcrypt
 include mk/lib.mk
 
 ifeq ($(CFG_DT),y)

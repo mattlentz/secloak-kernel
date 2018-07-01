@@ -32,7 +32,6 @@
 #include <keep.h>
 #include <kernel/abort.h>
 #include <kernel/thread_defs.h>
-#include <kernel/unwind.h>
 #include <sm/optee_smc.h>
 #include <sm/teesmc_opteed.h>
 #include <sm/teesmc_opteed_macros.h>
@@ -40,8 +39,6 @@
 	.section .text.thread_asm
 
 LOCAL_FUNC vector_std_smc_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	push	{r0-r7}
 	mov	r0, sp
 	bl	thread_handle_std_smc
@@ -55,12 +52,9 @@ UNWIND(	.cantunwind)
 	ldr	r0, =TEESMC_OPTEED_RETURN_CALL_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC vector_std_smc_entry
 
 LOCAL_FUNC vector_fast_smc_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	push	{r0-r7}
 	mov	r0, sp
 	bl	thread_handle_fast_smc
@@ -68,12 +62,9 @@ UNWIND(	.cantunwind)
 	ldr	r0, =TEESMC_OPTEED_RETURN_CALL_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC vector_fast_smc_entry
 
 LOCAL_FUNC vector_fiq_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
  	/* Secure Monitor received a FIQ and passed control to us. */
 	bl	thread_check_canaries
 	ldr	lr, =thread_nintr_handler_ptr
@@ -83,12 +74,9 @@ UNWIND(	.cantunwind)
 	ldr	r0, =TEESMC_OPTEED_RETURN_FIQ_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC vector_fiq_entry
 
 LOCAL_FUNC vector_cpu_on_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	ldr	lr, =thread_cpu_on_handler_ptr
 	ldr	lr, [lr]
 	blx	lr
@@ -96,12 +84,9 @@ UNWIND(	.cantunwind)
 	ldr	r0, =TEESMC_OPTEED_RETURN_ON_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC vector_cpu_on_entry
 
 LOCAL_FUNC vector_cpu_off_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	ldr	lr, =thread_cpu_off_handler_ptr
 	ldr	lr, [lr]
 	blx	lr
@@ -109,12 +94,9 @@ UNWIND(	.cantunwind)
 	ldr	r0, =TEESMC_OPTEED_RETURN_OFF_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC vector_cpu_off_entry
 
 LOCAL_FUNC vector_cpu_suspend_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	ldr	lr, =thread_cpu_suspend_handler_ptr
 	ldr	lr, [lr]
 	blx	lr
@@ -122,12 +104,9 @@ UNWIND(	.cantunwind)
 	ldr	r0, =TEESMC_OPTEED_RETURN_SUSPEND_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC vector_cpu_suspend_entry
 
 LOCAL_FUNC vector_cpu_resume_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	ldr	lr, =thread_cpu_resume_handler_ptr
 	ldr	lr, [lr]
 	blx	lr
@@ -135,12 +114,9 @@ UNWIND(	.cantunwind)
 	ldr	r0, =TEESMC_OPTEED_RETURN_RESUME_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC vector_cpu_resume_entry
 
 LOCAL_FUNC vector_system_off_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	ldr	lr, =thread_system_off_handler_ptr
 	ldr	lr, [lr]
 	blx	lr
@@ -148,12 +124,9 @@ UNWIND(	.cantunwind)
 	ldr	r0, =TEESMC_OPTEED_RETURN_SYSTEM_OFF_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC vector_system_off_entry
 
 LOCAL_FUNC vector_system_reset_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	ldr	lr, =thread_system_reset_handler_ptr
 	ldr	lr, [lr]
 	blx	lr
@@ -161,7 +134,6 @@ UNWIND(	.cantunwind)
 	ldr	r0, =TEESMC_OPTEED_RETURN_SYSTEM_RESET_DONE
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC vector_system_reset_entry
 
 /*
@@ -173,8 +145,6 @@ END_FUNC vector_system_reset_entry
  * in layout has to be synced with ARM-TF.
  */
 FUNC thread_vector_table , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	b	vector_std_smc_entry
 	b	vector_fast_smc_entry
 	b	vector_cpu_on_entry
@@ -184,46 +154,34 @@ UNWIND(	.cantunwind)
 	b	vector_fiq_entry
 	b	vector_system_off_entry
 	b	vector_system_reset_entry
-UNWIND(	.fnend)
 END_FUNC thread_vector_table
 
 FUNC thread_set_abt_sp , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	mrs	r1, cpsr
 	cps	#CPSR_MODE_ABT
 	mov	sp, r0
 	msr	cpsr, r1
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC thread_set_abt_sp
 
 FUNC thread_set_irq_sp , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	mrs	r1, cpsr
 	cps	#CPSR_MODE_IRQ
 	mov	sp, r0
 	msr	cpsr, r1
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC thread_set_irq_sp
 
 FUNC thread_set_fiq_sp , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	mrs	r1, cpsr
 	cps	#CPSR_MODE_FIQ
 	mov	sp, r0
 	msr	cpsr, r1
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC thread_set_fiq_sp
 
 /* void thread_resume(struct thread_ctx_regs *regs) */
 FUNC thread_resume , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	add	r12, r0, #(13 * 4)	/* Restore registers r0-r12 later */
 
 	cps	#CPSR_MODE_SYS
@@ -241,7 +199,6 @@ UNWIND(	.cantunwind)
 
 	/* Restore CPSR and jump to the instruction to resume at */
 	rfefd	sp!
-UNWIND(	.fnend)
 END_FUNC thread_resume
 
 /*
@@ -249,8 +206,6 @@ END_FUNC thread_resume
  * the banked r8-r12 registers, returns original CPSR.
  */
 LOCAL_FUNC thread_save_state_fiq , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	mov	r9, lr
 
 	/*
@@ -288,7 +243,6 @@ UNWIND(	.cantunwind)
 
 	mov	r0, r8			/* Return original CPSR */
 	bx	r9
-UNWIND(	.fnend)
 END_FUNC thread_save_state_fiq
 
 /*
@@ -296,8 +250,6 @@ END_FUNC thread_save_state_fiq
  * CPSR.
  */
 LOCAL_FUNC thread_save_state , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	push	{r12, lr}
 	/*
 	 * Uses stack for temporary storage, while storing needed
@@ -337,12 +289,9 @@ UNWIND(	.cantunwind)
 
 	mov	r0, r5			/* Return original CPSR */
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC thread_save_state
 
 FUNC thread_std_smc_entry , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	/* Pass r0-r7 in a struct thread_smc_args */
 	push	{r0-r7}
 	mov	r0, sp
@@ -369,7 +318,6 @@ UNWIND(	.cantunwind)
 	mov	r4, r7
 	smc	#0
 	b	.	/* SMC should not return */
-UNWIND(	.fnend)
 END_FUNC thread_std_smc_entry
 
 
@@ -385,11 +333,8 @@ FUNC thread_rpc , :
  * Since the this function is following AAPCS we need to preserve r4-r5
  * which are otherwise modified when returning back from normal world.
  */
-UNWIND(	.fnstart)
 	push	{r4-r5, lr}
-UNWIND(	.save	{r4-r5, lr})
 	push	{r0}
-UNWIND(	.save	{r0})
 
 	bl	thread_save_state
 	mov	r4, r0			/* Save original CPSR */
@@ -424,7 +369,6 @@ UNWIND(	.save	{r0})
 	pop	{r12}			/* Get pointer to rv[] */
 	stm	r12, {r0-r5}		/* Store r0-r5 into rv[] */
 	pop	{r4-r5, pc}
-UNWIND(	.fnend)
 END_FUNC thread_rpc
 
 /* The handler of native interrupt. */
@@ -458,196 +402,21 @@ END_FUNC thread_rpc
 	movs	pc, lr
 .endm
 
-/* The handler of foreign interrupt. */
-.macro foreign_intr_handler mode:req
-	.ifc	\mode\(),irq
-	/*
-	 * Disable FIQ if the foreign interrupt is sent as IRQ.
-	 * IRQ mode is set up to use tmp stack so FIQ has to be
-	 * disabled before touching the stack. We can also assign
-	 * SVC sp from IRQ sp to get SVC mode into the state we
-	 * need when doing the SMC below.
-	 * If it is sent as FIQ, the IRQ has already been masked by hardware
-	 */
-	cpsid	f
-	.endif
-	sub	lr, lr, #4
-	push	{lr}
-	push	{r12}
-
-	.ifc	\mode\(),fiq
-	bl	thread_save_state_fiq
-	.else
-	bl	thread_save_state
-	.endif
-
-	mov	r0, #THREAD_FLAGS_EXIT_ON_FOREIGN_INTR
-	mrs	r1, spsr
-	pop	{r12}
-	pop	{r2}
-	blx	thread_state_suspend
-	mov	r4, r0		/* Supply thread index */
-
-	/*
-	 * Switch to SVC mode and copy current stack pointer as it already
-	 * is the tmp stack.
-	 */
-	mov	r0, sp
-	cps	#CPSR_MODE_SVC
-	mov	sp, r0
-
-	ldr	r0, =TEESMC_OPTEED_RETURN_CALL_DONE
-	ldr	r1, =OPTEE_SMC_RETURN_RPC_FOREIGN_INTR
-	mov	r2, #0
-	mov	r3, #0
-	/* r4 is already filled in above */
-	smc	#0
-	b	.	/* SMC should not return */
-.endm
-
 LOCAL_FUNC thread_fiq_handler , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
-#if defined(CFG_ARM_GICV3)
-	foreign_intr_handler	fiq
-#else
 	native_intr_handler	fiq
-#endif
-UNWIND(	.fnend)
 END_FUNC thread_fiq_handler
 
-LOCAL_FUNC thread_irq_handler , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
-#if defined(CFG_ARM_GICV3)
-	native_intr_handler	irq
-#else
-	foreign_intr_handler	irq
-#endif
-UNWIND(	.fnend)
-END_FUNC thread_irq_handler
-
 FUNC thread_init_vbar , :
-UNWIND(	.fnstart)
 	/* Set vector (VBAR) */
 	ldr	r0, =thread_vect_table
 	write_vbar r0
 	bx	lr
-UNWIND(	.fnend)
 END_FUNC thread_init_vbar
 KEEP_PAGER thread_init_vbar
-
-/*
- * Below are low level routines handling entry and return from user mode.
- *
- * thread_enter_user_mode() saves all that registers user mode can change
- * so kernel mode can restore needed registers when resuming execution
- * after the call to thread_enter_user_mode() has returned.
- * thread_enter_user_mode() doesn't return directly since it enters user
- * mode instead, it's thread_unwind_user_mode() that does the
- * returning by restoring the registers saved by thread_enter_user_mode().
- *
- * There's three ways for thread_enter_user_mode() to return to caller,
- * user TA calls utee_return, user TA calls utee_panic or through an abort.
- *
- * Calls to utee_return or utee_panic are handled as:
- * thread_svc_handler() -> tee_svc_handler() ->	tee_svc_do_call() which
- * calls syscall_return() or syscall_panic().
- *
- * These function calls returns normally except thread_svc_handler() which
- * which is an exception handling routine so it reads return address and
- * SPSR to restore from the stack. syscall_return() and syscall_panic()
- * changes return address and SPSR used by thread_svc_handler() to instead of
- * returning into user mode as with other syscalls it returns into
- * thread_unwind_user_mode() in kernel mode instead.  When
- * thread_svc_handler() returns the stack pointer at the point where
- * thread_enter_user_mode() left it so this is where
- * thread_unwind_user_mode() can operate.
- *
- * Aborts are handled in a similar way but by thread_abort_handler()
- * instead, when the pager sees that it's an abort from user mode that
- * can't be handled it updates SPSR and return address used by
- * thread_abort_handler() to return into thread_unwind_user_mode()
- * instead.
- */
-
-/*
- * uint32_t __thread_enter_user_mode(unsigned long a0, unsigned long a1,
- *               unsigned long a2, unsigned long a3, unsigned long user_sp,
- *               unsigned long user_func, unsigned long spsr,
- *               uint32_t *exit_status0, uint32_t *exit_status1)
- *
- */
-FUNC __thread_enter_user_mode , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
-	/*
-	 * Save all registers to allow syscall_return() to resume execution
-	 * as if this function would have returned. This is also used in
-	 * syscall_panic().
-	 *
-	 * If stack usage of this function is changed
-	 * thread_unwind_user_mode() has to be updated.
-	 */
-	push    {r4-r12,lr}
-
-	ldr     r4, [sp, #(10 * 0x4)]   /* user stack pointer */
-	ldr     r5, [sp, #(11 * 0x4)]   /* user function */
-	ldr     r6, [sp, #(12 * 0x4)]   /* spsr */
-
-	/*
-	 * Set the saved Processors Status Register to user mode to allow
-	 * entry of user mode through movs below.
-	 */
-	msr     spsr_cxsf, r6
-	
-	/*
-	 * Save old user sp and set new user sp.
-	 */
-	cps	#CPSR_MODE_SYS
-	mov	r6, sp
-	mov     sp, r4
-	cps	#CPSR_MODE_SVC
-	push	{r6,r7}
-
-	/*
-	* Don't allow return from this function, return is done through
-	* thread_unwind_user_mode() below.
-	*/
-	mov     lr, #0
-	/* Call the user function with its arguments */
-	movs    pc, r5
-UNWIND(	.fnend)
-END_FUNC __thread_enter_user_mode
-
-/*
- * void thread_unwind_user_mode(uint32_t ret, uint32_t exit_status0,
- *              uint32_t exit_status1);
- * See description in thread.h
- */
-FUNC thread_unwind_user_mode , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
-	ldr     ip, [sp, #(15 * 0x4)]   /* &ctx->panicked */
-	str	r1, [ip]
-	ldr     ip, [sp, #(16 * 0x4)]   /* &ctx->panic_code */
-	str	r2, [ip]
-
-	/* Restore old user sp */
-	pop	{r4,r7}
-	cps	#CPSR_MODE_SYS
-	mov	sp, r4
-	cps	#CPSR_MODE_SVC
-
-	pop     {r4-r12,pc}	/* Match the push in thread_enter_user_mode()*/
-UNWIND(	.fnend)
-END_FUNC thread_unwind_user_mode
 
 LOCAL_FUNC thread_abort_handler , :
 thread_abort_handler:
 thread_und_handler:
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	/*
 	 * Switch to abort mode to use that stack instead.
 	 */
@@ -698,35 +467,16 @@ thread_pabort_handler:
 	msr	spsr_fsxc, r0
 	pop	{r0-r11, ip}
 	movs	pc, lr
-UNWIND(	.fnend)
 END_FUNC thread_abort_handler
-
-LOCAL_FUNC thread_svc_handler , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
-	push	{r0-r7, lr}
-	mrs	r0, spsr
-	push	{r0}
-	mov	r0, sp
-	bl	tee_svc_handler
-	pop	{r0}
-	msr	spsr_fsxc, r0
-	pop	{r0-r7, lr}
-	movs	pc, lr
-UNWIND(	.fnend)
-END_FUNC thread_svc_handler
 
         .align	5
 LOCAL_FUNC thread_vect_table , :
-UNWIND(	.fnstart)
-UNWIND(	.cantunwind)
 	b	.			/* Reset			*/
 	b	thread_und_handler	/* Undefined instruction	*/
-	b	thread_svc_handler	/* System call			*/
+	b	.	/* System call			*/
 	b	thread_pabort_handler	/* Prefetch abort		*/
 	b	thread_dabort_handler	/* Data abort			*/
 	b	.			/* Reserved			*/
-	b	thread_irq_handler	/* IRQ				*/
+	b	.	/* IRQ				*/
 	b	thread_fiq_handler	/* FIQ				*/
-UNWIND(	.fnend)
 END_FUNC thread_vect_table

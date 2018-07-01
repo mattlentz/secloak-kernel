@@ -42,8 +42,8 @@ void generic_boot_init_primary(unsigned long pageable_part,
 void generic_boot_init_secondary(unsigned long nsec_entry);
 #endif
 
-void main_init_gic(void);
-void main_secondary_init_gic(void);
+void main_init_primary(void);
+void main_init_secondary(void);
 
 void init_sec_mon(unsigned long nsec_entry);
 
@@ -52,9 +52,9 @@ const struct thread_handlers *generic_boot_get_handlers(void);
 /* weak routines eventually overridden by platform */
 void plat_cpu_reset_early(void);
 void plat_cpu_reset_late(void);
+void change_csu_settings(int, uintptr_t);
 void arm_cl2_config(vaddr_t pl310);
 void arm_cl2_enable(vaddr_t pl310);
-
 #if defined(CFG_BOOT_SECONDARY_REQUEST)
 extern paddr_t ns_entry_addrs[];
 int generic_boot_core_release(size_t core_idx, paddr_t entry);

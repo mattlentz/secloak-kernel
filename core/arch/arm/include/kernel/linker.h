@@ -28,7 +28,6 @@
 #define __KERNEL_LINKER_H
 
 #include <initcall.h>
-#include <kernel/pseudo_ta.h>
 #include <kernel/dt.h>
 #include <mm/core_mmu.h>
 #include <types_ext.h>
@@ -44,9 +43,6 @@
  */
 extern const uint8_t __exidx_start[];
 extern const uint8_t __exidx_end[];
-
-extern const struct pseudo_ta_head __start_ta_head_section;
-extern const struct pseudo_ta_head __stop_ta_head_section;
 
 extern const struct core_mmu_phys_mem __start_phys_sdp_mem_section;
 extern const struct core_mmu_phys_mem __end_phys_sdp_mem_section;

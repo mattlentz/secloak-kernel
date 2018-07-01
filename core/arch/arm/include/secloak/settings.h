@@ -1,0 +1,33 @@
+#ifndef SECLOAK_SETTINGS_H
+#define SECLOAK_SETTINGS_H
+
+#define MODE_NONE 0
+#define MODE_AIRPLANE 1
+#define MODE_MOVIE 2
+#define MODE_STEALTH 3
+
+#define NETWORK_SHIFT 2
+#define MULTIMEDIA_SHIFT 11
+#define SENSOR_SHIFT 20
+
+#define GROUP_DIS_OFF 0
+#define GROUP_DIS_CUSTOM 4
+#define GROUP_EN_OFF 1
+#define GROUP_EN_ON 7
+#define GROUP_EN_CUSTOM 5
+
+#define WIFI_SHIFT 5
+#define BT_SHIFT 7
+#define CELLULAR_SHIFT 9
+#define CAMERA_SHIFT 14
+#define SPEAKER_SHIFT 16
+#define MIC_SHIFT 18
+#define GPS_SHIFT 23
+#define INERTIAL_SHIFT 25
+
+#define DISABLED_OFF 0
+#define DISABLED_ON 1
+#define ENABLED_OFF 2
+#define ENABLED_ON 3
+
+#endif

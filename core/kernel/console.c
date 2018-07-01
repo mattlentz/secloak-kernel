@@ -84,7 +84,7 @@ void configure_console_from_dt(unsigned long phys_fdt)
 
 	if (!phys_fdt)
 		return;
-	fdt = phys_to_virt(phys_fdt, MEM_AREA_IO_NSEC);
+	fdt = phys_to_virt(phys_fdt, MEM_AREA_RAM_NSEC);
 	if (!fdt)
 		panic();
 

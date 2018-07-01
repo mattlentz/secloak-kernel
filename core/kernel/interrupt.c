@@ -26,77 +26,186 @@
  */
 
 #include <kernel/interrupt.h>
+#include <kernel/panic.h>
+#include <errno.h>
+#include <malloc.h>
 #include <trace.h>
 
-/*
- * NOTE!
- *
- * We're assuming that there's no concurrent use of this interface, except
- * delivery of interrupts in parallel. Synchronization will be needed when
- * we begin to modify settings after boot initialization.
- */
+static SLIST_HEAD(, irq_chip) chips = SLIST_HEAD_INITIALIZER(chips);
 
-static struct itr_chip *itr_chip;
-static SLIST_HEAD(, itr_handler) handlers = SLIST_HEAD_INITIALIZER(handlers);
-
-void itr_init(struct itr_chip *chip)
-{
-	itr_chip = chip;
-}
-
-static struct itr_handler *find_handler(size_t it)
-{
-	struct itr_handler *h;
-
-	SLIST_FOREACH(h, &handlers, link)
-		if (h->it == it)
-			return h;
-	return NULL;
-}
-
-void itr_handle(size_t it)
-{
-	struct itr_handler *h = find_handler(it);
-
-	if (!h) {
-		EMSG("Disabling unhandled interrupt %zu", it);
-		itr_chip->ops->disable(itr_chip, it);
-		return;
+int32_t irq_construct_chip(struct irq_chip *chip, struct device *dev, const struct irq_chip_ops *ops, size_t num_irqs, void *data, bool default_handler) {
+	chip->dev = dev;
+	chip->ops = ops;
+	chip->num_irqs = num_irqs;
+	chip->data = data;
+	chip->default_handler = default_handler;
+	chip->handlers = malloc(num_irqs * sizeof(*chip->handlers));
+	if (!chip->handlers) {
+		return -ENOMEM;
 	}
 
-	if (h->handler(h) != ITRR_HANDLED) {
-		EMSG("Disabling interrupt %zu not handled by handler", it);
-		itr_chip->ops->disable(itr_chip, it);
+	memset(chip->handlers, 0, num_irqs * sizeof(*chip->handlers));
+	SLIST_INSERT_HEAD(&chips, chip, entry);
+
+	return 0;
+}
+
+void irq_destruct_chip(struct irq_chip *chip) {
+	SLIST_REMOVE(&chips, chip, irq_chip, entry);
+	free(chip->handlers);
+}
+
+struct irq_chip *irq_find_chip(struct device *dev) {
+	struct irq_chip *chip;
+	SLIST_FOREACH(chip, &chips, entry) {
+		if (chip->dev == dev) {
+			break;
+		}
 	}
+
+	return chip;
 }
 
-void itr_add(struct itr_handler *h)
-{
-	itr_chip->ops->add(itr_chip, h->it, h->flags);
-	SLIST_INSERT_HEAD(&handlers, h, link);
+static bool irq_check_valid(struct irq_chip *chip, size_t irq) {
+	if (irq >= chip->num_irqs) {
+		DMSG("[IRQ] Invalid IRQ %d", irq);
+		panic();
+		return false;
+	}
+
+	return true;
 }
 
-void itr_enable(size_t it)
+enum irq_return irq_handle(struct irq_chip *chip, size_t irq)
 {
-	itr_chip->ops->enable(itr_chip, it);
+	if (!irq_check_valid(chip, irq)) {
+		return ITRR_NONE;
+	}
+
+	struct irq_handler *handler = chip->handlers[irq];
+	if (!handler) {
+		if (chip->default_handler) {
+			return ITRR_HANDLED_DEFAULT;
+		} else {
+			EMSG("[IRQ] Disabling unhandled interrupt %zu", irq);
+			chip->ops->disable(chip, irq);
+			return ITRR_NONE;
+		}
+	}
+
+	enum irq_return ret = handler->handle(handler);
+	if (ret == ITRR_NONE) {
+		EMSG("[IRQ] Disabling interrupt %zu not handled by handler", irq);
+		chip->ops->disable(chip, irq);
+	}
+
+	return ret;
 }
 
-void itr_disable(size_t it)
-{
-	itr_chip->ops->disable(itr_chip, it);
+int32_t irq_map(struct irq_chip *chip, const fdt32_t *dt_spec, size_t *irq, uint32_t *flags) {
+	return chip->ops->map(chip, dt_spec, irq, flags);
 }
 
-void itr_raise_pi(size_t it)
-{
-	itr_chip->ops->raise_pi(itr_chip, it);
+int32_t irq_add(struct irq_desc *desc, uint32_t flags, struct irq_handler *handler) {
+	struct irq_chip *chip = desc->chip;
+	size_t irq = desc->irq;
+	if (!irq_check_valid(chip, irq)) {
+		return -EINVAL;
+	}
+
+	chip->handlers[irq] = handler;
+	return chip->ops->add(chip, irq, flags);
 }
 
-void itr_raise_sgi(size_t it, uint8_t cpu_mask)
-{
-	itr_chip->ops->raise_sgi(itr_chip, it, cpu_mask);
+int32_t irq_remove(struct irq_desc *desc) {
+	struct irq_chip *chip = desc->chip;
+	size_t irq = desc->irq;
+	if (!irq_check_valid(chip, irq)) {
+		return -EINVAL;
+	}
+
+	int32_t error = chip->ops->remove(chip, irq);
+	if (!error) {
+		chip->handlers[irq] = NULL;
+	}
+
+	return error;
 }
 
-void itr_set_affinity(size_t it, uint8_t cpu_mask)
-{
-	itr_chip->ops->set_affinity(itr_chip, it, cpu_mask);
+int32_t irq_enable(struct irq_desc *desc) {
+	struct irq_chip *chip = desc->chip;
+	size_t irq = desc->irq;
+	if (!irq_check_valid(chip, irq)) {
+		return -EINVAL;
+	}
+
+	return chip->ops->enable(chip, irq);
+}
+
+int32_t irq_disable(struct irq_desc *desc) {
+	struct irq_chip *chip = desc->chip;
+	size_t irq = desc->irq;
+	if (!irq_check_valid(chip, irq)) {
+		return -EINVAL;
+	}
+
+	return chip->ops->disable(chip, irq);
+}
+
+int32_t irq_secure(struct irq_desc *desc) {
+	struct irq_chip *chip = desc->chip;
+	size_t irq = desc->irq;
+	if (!irq_check_valid(chip, irq)) {
+		return -EINVAL;
+	}
+
+	return chip->ops->secure(chip, irq);
+}
+
+int32_t irq_unsecure(struct irq_desc *desc) {
+	struct irq_chip *chip = desc->chip;
+	size_t irq = desc->irq;
+	if (!irq_check_valid(chip, irq)) {
+		return -EINVAL;
+	}
+
+	return chip->ops->unsecure(chip, irq);
+}
+
+int32_t irq_raise(struct irq_desc *desc) {
+	struct irq_chip *chip = desc->chip;
+	size_t irq = desc->irq;
+	if (!irq_check_valid(chip, irq)) {
+		return -EINVAL;
+	}
+
+	return chip->ops->raise(chip, irq);
+}
+
+int32_t irq_raise_sgi(struct irq_desc *desc, uint8_t cpu_mask) {
+	struct irq_chip *chip = desc->chip;
+	size_t irq = desc->irq;
+	if (!irq_check_valid(chip, irq)) {
+		return -EINVAL;
+	}
+
+	if (chip->ops->raise_sgi) {
+		return -EINVAL;
+	}
+
+	return chip->ops->raise_sgi(chip, irq, cpu_mask);
+}
+
+int32_t irq_set_affinity(struct irq_desc *desc, uint8_t cpu_mask) {
+	struct irq_chip *chip = desc->chip;
+	size_t irq = desc->irq;
+	if (!irq_check_valid(chip, irq)) {
+		return -EINVAL;
+	}
+
+	if (chip->ops->set_affinity) {
+		return -EINVAL;
+	}
+
+	return chip->ops->set_affinity(chip, irq, cpu_mask);
 }

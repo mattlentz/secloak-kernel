@@ -26,21 +26,22 @@ endif
 comp-cflags$(sm)  	+= -fdiagnostics-show-option
 
 comp-cflags-warns-high = \
-	-Wall -Wcast-align  \
+	-Wall \
 	-Werror-implicit-function-declaration -Wextra -Wfloat-equal \
 	-Wformat-nonliteral -Wformat-security -Wformat=2 -Winit-self \
 	-Wmissing-declarations -Wmissing-format-attribute \
-	-Wmissing-include-dirs -Wmissing-noreturn \
+	-Wmissing-include-dirs\
 	-Wmissing-prototypes -Wnested-externs -Wpointer-arith \
-	-Wshadow -Wstrict-prototypes -Wswitch-default \
+	-Wstrict-prototypes \
 	-Wwrite-strings \
 	-Wno-missing-field-initializers -Wno-format-zero-length
 comp-cflags-warns-medium = \
-	-Waggregate-return -Wredundant-decls
+	-Waggregate-return \
+	-Wredundant-decls
 comp-cflags-warns-low = \
 	-Wold-style-definition -Wstrict-aliasing=2 \
-	-Wundef -pedantic \
-	-Wdeclaration-after-statement
+	-Wundef -pedantic
+	#-Wdeclaration-after-statement
 
 comp-cflags-warns-1:= $(comp-cflags-warns-high)
 comp-cflags-warns-2:= $(comp-cflags-warns-1) $(comp-cflags-warns-medium)

@@ -1,21 +1,9 @@
-srcs-$(CFG_CDNS_UART) += cdns_uart.c
-srcs-$(CFG_PL011) += pl011.c
-srcs-$(CFG_PL050) += pl050.c
-srcs-$(CFG_TZC400) += tzc400.c
 srcs-$(CFG_TZC380) += tzc380.c
-srcs-$(CFG_PS2MOUSE) += ps2mouse.c
-srcs-$(CFG_PL111) += pl111.c
-srcs-$(CFG_FRAME_BUFFER) += frame_buffer.c
 srcs-$(CFG_GIC) += gic.c
-srcs-$(CFG_PL061) += pl061_gpio.c
-srcs-$(CFG_PL022) += pl022_spi.c
-srcs-$(CFG_SUNXI_UART) += sunxi_uart.c
-srcs-$(CFG_8250_UART) += serial8250_uart.c
-srcs-$(CFG_16550_UART) += ns16550.c
 srcs-$(CFG_IMX_UART) += imx_uart.c
-srcs-$(CFG_SPRD_UART) += sprd_uart.c
-srcs-$(CFG_HI16XX_UART) += hi16xx_uart.c
-srcs-$(CFG_HI16XX_RNG) += hi16xx_rng.c
-srcs-$(CFG_SCIF) += scif.c
-srcs-$(CFG_DRA7_RNG) += dra7_rng.c
-srcs-$(CFG_STIH_UART) += stih_asc.c
+srcs-$(CFG_IMX_FRAME_BUFFER) += imx_fb.c
+srcs-$(CFG_IMX_GPIO) += imx_gpio.c
+srcs-$(CFG_IMX_GPIO_KEYS) += imx_gpio_keys.c
+srcs-$(CFG_IMX_CSU) += imx_csu.c
+srcs-y += dt.c
+

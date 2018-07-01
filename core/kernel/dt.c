@@ -27,6 +27,7 @@
 
 #include <assert.h>
 #include <kernel/dt.h>
+#include <drivers/dt.h>
 #include <kernel/linker.h>
 #include <libfdt.h>
 #include <mm/core_memprot.h>
@@ -48,6 +49,21 @@ const struct dt_driver *dt_find_compatible_driver(const void *fdt, int offs)
 	return NULL;
 }
 
+int dt_probe_compatible_driver(const void *fdt, struct device *dev)
+{
+	const struct dt_driver *driver;
+
+	for_each_dt_driver(driver) {
+		for (const struct dt_device_match *match = driver->match_table; match->compatible != NULL; match++) {
+			if (!fdt_node_check_compatible(fdt, dev->node, match->compatible)) {
+				return driver->probe(fdt, dev, match->data);
+			}
+		}
+	}
+
+	return 0;
+}
+
 const struct dt_driver *__dt_driver_start(void)
 {
 	return &__rodata_dtdrv_start;
@@ -58,127 +74,24 @@ const struct dt_driver *__dt_driver_end(void)
 	return &__rodata_dtdrv_end;
 }
 
-int dt_map_dev(const void *fdt, int offs, vaddr_t *base, size_t *size)
-{
-	enum teecore_memtypes mtype;
-	paddr_t pbase;
-	vaddr_t vbase;
-	ssize_t sz;
-	int st;
+const void* dt_read_property(const void *fdt, int offs, const char *name) {
+	const void *prop;
+	prop = fdt_getprop(fdt, offs, name, NULL);
 
-	assert(cpu_mmu_enabled());
+	return prop;
+}
 
-	st = _fdt_get_status(fdt, offs);
-	if (st == DT_STATUS_DISABLED)
-		return -1;
+int dt_read_property_u32(const void *fdt, int offs, const char *name, uint32_t *out) {
+	const void *prop;
+	int prop_size;
 
-	pbase = _fdt_reg_base_address(fdt, offs);
-	if (pbase == (paddr_t)-1)
-		return -1;
-	sz = _fdt_reg_size(fdt, offs);
-	if (sz < 0)
-		return -1;
-
-	if ((st & DT_STATUS_OK_SEC) && !(st & DT_STATUS_OK_NSEC))
-		mtype = MEM_AREA_IO_SEC;
-	else
-		mtype = MEM_AREA_IO_NSEC;
-
-	/* Check if we have a mapping, create one if needed */
-	if (!core_mmu_add_mapping(mtype, pbase, sz)) {
-		EMSG("Failed to map %zu bytes at PA 0x%"PRIxPA,
-		     (size_t)size, pbase);
-		return -1;
-	}
-	vbase = (vaddr_t)phys_to_virt(pbase, mtype);
-	if (!vbase) {
-		EMSG("Failed to get VA for PA 0x%"PRIxPA, pbase);
+	prop = fdt_getprop(fdt, offs, name, &prop_size);
+	if (!prop || (prop_size != sizeof(uint32_t))) {
 		return -1;
 	}
 
-	*base = vbase;
-	*size = sz;
+	*out = fdt32_to_cpu(*((uint32_t*)prop));
 	return 0;
-}
-
-/* Read a physical address (n=1 or 2 cells) */
-static paddr_t _fdt_read_paddr(const uint32_t *cell, int n)
-{
-	paddr_t addr;
-
-	if (n < 1 || n > 2)
-		goto bad;
-
-	addr = fdt32_to_cpu(*cell);
-	cell++;
-	if (n == 2) {
-#ifdef ARM32
-		if (addr) {
-			/* High order 32 bits can't be nonzero */
-			goto bad;
-		}
-		addr = fdt32_to_cpu(*cell);
-#else
-		addr = (addr << 32) | fdt32_to_cpu(*cell);
-#endif
-	}
-
-	if (!addr)
-		goto bad;
-
-	return addr;
-bad:
-	return (paddr_t)-1;
-
-}
-
-paddr_t _fdt_reg_base_address(const void *fdt, int offs)
-{
-	const void *reg;
-	int ncells;
-	int len;
-
-	reg = fdt_getprop(fdt, offs, "reg", &len);
-	if (!reg)
-		return (paddr_t)-1;
-
-	ncells = fdt_address_cells(fdt, offs);
-	if (ncells < 0)
-		return (paddr_t)-1;
-
-	return _fdt_read_paddr(reg, ncells);
-}
-
-ssize_t _fdt_reg_size(const void *fdt, int offs)
-{
-	const uint32_t *reg;
-	uint32_t sz;
-	int n;
-	int len;
-
-	reg = (const uint32_t *)fdt_getprop(fdt, offs, "reg", &len);
-	if (!reg)
-		return -1;
-
-	n = fdt_address_cells(fdt, offs);
-	if (n < 1 || n > 2)
-		return -1;
-
-	reg += n;
-
-	n = fdt_size_cells(fdt, offs);
-	if (n < 1 || n > 2)
-		return -1;
-
-	sz = fdt32_to_cpu(*reg);
-	if (n == 2) {
-		if (sz)
-			return -1;
-		reg++;
-		sz = fdt32_to_cpu(*reg);
-	}
-
-	return sz;
 }
 
 static bool is_okay(const char *st, int len)
@@ -194,21 +107,7 @@ int _fdt_get_status(const void *fdt, int offs)
 
 	prop = fdt_getprop(fdt, offs, "status", &len);
 	if (!prop || is_okay(prop, len)) {
-		/* If status is not specified, it defaults to "okay" */
-		st |= DT_STATUS_OK_NSEC;
-	}
-
-	prop = fdt_getprop(fdt, offs, "secure-status", &len);
-	if (!prop) {
-		/*
-		 * When secure-status is not specified it defaults to the same
-		 * value as status
-		 */
-		if (st & DT_STATUS_OK_NSEC)
-			st |= DT_STATUS_OK_SEC;
-	} else {
-		if (is_okay(prop, len))
-			st |= DT_STATUS_OK_SEC;
+		st |= DT_STATUS_OK_NSEC | DT_STATUS_OK_SEC;
 	}
 
 	return st;

@@ -27,12 +27,11 @@
  */
 #ifndef SM_PRIVATE_H
 #define SM_PRIVATE_H
-
 /* Returns true if returning to sec, false if returning to nsec */
 bool sm_from_nsec(struct sm_ctx *ctx);
-
 void sm_save_modes_regs(struct sm_mode_regs *regs);
 void sm_restore_modes_regs(struct sm_mode_regs *regs);
 
+void emu_handle(struct sm_ctx *ctx, unsigned long status, unsigned long data_paddr, unsigned long instr_paddr);
 #endif /*SM_PRIVATE_H*/
 

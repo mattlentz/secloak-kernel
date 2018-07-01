@@ -31,7 +31,6 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include "tee_api_types.h"
-#include "user_ta_header.h"
 
 extern TEE_Result init_teecore(void);
 

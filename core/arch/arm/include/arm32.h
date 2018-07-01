@@ -64,6 +64,11 @@
 #define SCR_HCE		BIT32(8)
 #define SCR_SIF		BIT32(9)
 
+#define VCR_IFO		BIT32(6)
+#define VCR_IMO		BIT32(7)
+#define VCR_AMO		BIT32(8)
+
+
 #define SCTLR_M		BIT32(0)
 #define SCTLR_A		BIT32(1)
 #define SCTLR_C		BIT32(2)

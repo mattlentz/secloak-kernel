@@ -201,6 +201,12 @@ $(link-out-dir)/tee-init_mem_usage.txt: $(link-out-dir)/tee.elf
 	@echo -n 0x > $@
 	$(q)$(NMcore) $< | grep ' __init_mem_usage' | sed 's/ .*$$//' >> $@
 
+all: $(link-out-dir)/sImage
+cleanfiles += $(link-out-dir)/sImage
+$(link-out-dir)/sImage: $(link-out-dir)/tee.bin
+	@$(cmd-echo-silent) '  GEN     $@'
+	mkimage -A $(ARCH) -O linux -C none -a $(CFG_IMG_ADDR) -e $(CFG_IMG_ENTRY) -d $< $@
+
 all: $(link-out-dir)/tee.bin
 cleanfiles += $(link-out-dir)/tee.bin
 $(link-out-dir)/tee.bin: $(link-out-dir)/tee-pager.bin \

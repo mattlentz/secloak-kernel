@@ -28,8 +28,13 @@ core_arm32-platform-aflags	+= -mfpu=neon
 $(call force,CFG_GENERIC_BOOT,y)
 $(call force,CFG_GIC,y)
 $(call force,CFG_IMX_UART,y)
+$(call force,CFG_IMX_FRAME_BUFFER,y)
+$(call force,CFG_IMX_GPIO,y)
+$(call force,CFG_IMX_GPIO_KEYS,y)
 $(call force,CFG_PM_STUBS,y)
 $(call force,CFG_WITH_SOFTWARE_PRNG,y)
+$(call force,CFG_TZC380,y)
+$(call force,CFG_IMX_CSU,y)
 
 CFG_CRYPTO_SIZE_OPTIMIZATION ?= n
 CFG_WITH_STACK_CANARIES ?= y

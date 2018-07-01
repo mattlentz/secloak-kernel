@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include <types_ext.h>
 #include <util.h>
+#include <drivers/dt.h>
 
 /*
  * Bitfield to reflect status and secure-status values ("ok", "disabled" or not
@@ -41,20 +42,22 @@
 #define DT_STATUS_OK_NSEC  BIT(0)
 #define DT_STATUS_OK_SEC   BIT(1)
 
-#if defined(CFG_DT)
-
 /*
  * DT-aware drivers
  */
 
 struct dt_device_match {
 	const char *compatible;
+	const void *data;
 };
+
+struct device;
 
 struct dt_driver {
 	const char *name;
 	const struct dt_device_match *match_table; /* null-terminated */
 	const void *driver;
+	int (*probe)(const void *fdt, struct device *dev, const void *data);
 };
 
 #define __dt_driver __section(".rodata.dtdrv")
@@ -67,42 +70,18 @@ struct dt_driver {
  * @offs: node offset
  */
 const struct dt_driver *dt_find_compatible_driver(const void *fdt, int offs);
+int dt_probe_compatible_driver(const void *fdt, struct device *dev);
 
 const struct dt_driver *__dt_driver_start(void);
 
 const struct dt_driver *__dt_driver_end(void);
 
-/*
- * Map a device into secure or non-secure memory and return the base VA and
- * the mapping size. The mapping is done with type MEM_AREA_IO_SEC or
- * MEM_AREA_IO_NSEC, depending on the device status.
- * If the mapping already exists, the function simply returns the @vbase and
- * @size information.
- *
- * @offs is the offset of the node that describes the device in @fdt.
- * @base receives the base virtual address corresponding to the base physical
- * address of the "reg" property
- * @size receives the size of the mapping
- *
- * Returns 0 on success or -1 in case of error.
- */
-int dt_map_dev(const void *fdt, int offs, vaddr_t *base, size_t *size);
+const void* dt_read_property(const void *fdt, int offs, const char *name);
+int dt_read_property_u32(const void *fdt, int offs, const char *name, uint32_t *out);
 
 /*
  * FDT manipulation functions, not provided by <libfdt.h>
  */
-
-/*
- * Return the base address for the "reg" property of the specified node or
- * (paddr_t)-1 in case of error
- */
-paddr_t _fdt_reg_base_address(const void *fdt, int offs);
-
-/*
- * Return the reg size for the reg property of the specified node or -1 in case
- * of error
- */
-ssize_t _fdt_reg_size(const void *fdt, int offs);
 
 /*
  * Read the status and secure-status properties into a bitfield.
@@ -111,50 +90,6 @@ ssize_t _fdt_reg_size(const void *fdt, int offs);
  * Returns 0 on success or -1 in case of error.
  */
 int _fdt_get_status(const void *fdt, int offs);
-
-#else /* !CFG_DT */
-
-static inline const struct dt_driver *__dt_driver_start(void)
-{
-	return NULL;
-}
-
-static inline const struct dt_driver *__dt_driver_end(void)
-{
-	return NULL;
-}
-
-static inline const struct dt_driver *dt_find_compatible_driver(
-					const void *fdt __unused,
-					int offs __unused)
-{
-	return NULL;
-}
-
-static inline int dt_map_dev(const void *fdt __unused, int offs __unused,
-			     vaddr_t *vbase __unused, size_t *size __unused)
-{
-	return -1;
-}
-
-static inline paddr_t _fdt_reg_base_address(const void *fdt __unused,
-					    int offs __unused)
-{
-	return (paddr_t)-1;
-}
-
-static inline ssize_t _fdt_reg_size(const void *fdt __unused,
-				    int offs __unused)
-{
-	return -1;
-}
-
-static inline int _fdt_get_status(const void *fdt __unused, int offs __unused)
-{
-	return -1;
-}
-
-#endif /* !CFG_DT */
 
 #define for_each_dt_driver(drv) \
 	for (drv = __dt_driver_start(); drv < __dt_driver_end(); drv++)

@@ -56,18 +56,4 @@ void secure_mmu_unifiedtlbinv_byasid(unsigned long asid);
 void secure_mmu_disable(void);
 #endif /*!ASM*/
 
-#ifdef ARM64
-/* D$ set/way op type defines */
-#define DCISW			0x0
-#define DCCISW			0x1
-#define DCCSW			0x2
-
-#ifndef ASM
-void flush_dcache_range(vaddr_t va, size_t len);
-void inv_dcache_range(vaddr_t va, size_t len);
-void dcsw_op_louis(uint32_t op);
-void dcsw_op_all(uint32_t op);
-#endif /*!ASM*/
-#endif /*ARM64*/
-
 #endif

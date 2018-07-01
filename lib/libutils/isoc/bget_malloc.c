@@ -109,7 +109,6 @@
 
 #if defined(__KERNEL__)
 /* Compiling for TEE Core */
-#include <kernel/asan.h>
 #include <kernel/thread.h>
 #include <kernel/spinlock.h>
 
@@ -122,17 +121,6 @@ static void malloc_unlock(uint32_t exceptions)
 {
 	cpu_spin_unlock_xrestore(&__malloc_spinlock, exceptions);
 }
-
-static void tag_asan_free(void *buf, size_t len)
-{
-	asan_tag_heap_free(buf, (uint8_t *)buf + len);
-}
-
-static void tag_asan_alloced(void *buf, size_t len)
-{
-	asan_tag_access(buf, (uint8_t *)buf + len);
-}
-
 #else /*__KERNEL__*/
 /* Compiling for TA */
 static uint32_t malloc_lock(void)
@@ -141,14 +129,6 @@ static uint32_t malloc_lock(void)
 }
 
 static void malloc_unlock(uint32_t exceptions __unused)
-{
-}
-
-static void tag_asan_free(void *buf __unused, size_t len __unused)
-{
-}
-
-static void tag_asan_alloced(void *buf __unused, size_t len __unused)
 {
 }
 #endif /*__KERNEL__*/
@@ -889,7 +869,6 @@ void malloc_add_pool(void *buf, size_t len)
 	}
 
 	exceptions = malloc_lock();
-	tag_asan_free((void *)start, end - start);
 	bpool((void *)start, end - start);
 	l = malloc_pool_len + 1;
 	p = realloc_unlocked(malloc_pool, sizeof(struct malloc_pool) * l);
