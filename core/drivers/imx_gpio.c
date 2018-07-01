@@ -479,7 +479,7 @@ static void mxc_flip_edge(struct mxc_gpio_port *port, uint32_t gpio)
 	} else if (edge == GPIO_INT_LOW_LEV) {
 		edge = GPIO_INT_HIGH_LEV;
 	} else {
-		EMSG("mxc: invalid configuration for GPIO %d: %x\n", gpio, edge);
+		EMSG("[GPIO] Invalid configuration for pin %d on port 0x%lX: %x\n", gpio, port->pbase, edge);
 		return;
 	}
 
@@ -587,7 +587,7 @@ static int mxc_gpio_probe(const void *fdt __unused, struct device *dev, const vo
 {
 	struct mxc_gpio_port *port;
 	if (!(port = malloc(sizeof(*port)))) {
-		EMSG("Could not allocate memory for driver structure for device %s\n", dev->name);
+		EMSG("[GPIO] Could not allocate memory for driver structure for device %s\n", dev->name);
 		return -ENOMEM;
 	}
 	memset(port, 0, sizeof(*port));
@@ -596,14 +596,14 @@ static int mxc_gpio_probe(const void *fdt __unused, struct device *dev, const vo
 	mxc_gpio_get_hw(data);
 
 	if (dev->num_resources != 1 || dev->resource_type != RESOURCE_MEM) {
-		EMSG("Resource is not valid for device %s\n", dev->name);
+		EMSG("[GPIO] Resource is not valid for device %s\n", dev->name);
 		return -EINVAL;
 	}
 
 	paddr_t paddr = dev->resources[0].address[0];
 	size_t size = dev->resources[0].size[0];
 	if (!core_mmu_add_mapping(MEM_AREA_IO_SEC, paddr, size)) {
-		EMSG("Could not map I/O memory (paddr %lX, size %X) for device %s\n", paddr, size, dev->name);
+		EMSG("[GPIO] Could not map I/O memory (paddr %lX, size %X) for device %s\n", paddr, size, dev->name);
 		return -EINVAL;
 	}
 
@@ -612,7 +612,7 @@ static int mxc_gpio_probe(const void *fdt __unused, struct device *dev, const vo
 	port->base = (vaddr_t)phys_to_virt(paddr, MEM_AREA_IO_SEC);
 
 	if (dev->num_irqs < 2 || dev->num_irqs > 3) {
-		EMSG("IRQs are not valid for device %s\n", dev->name);
+		EMSG("[GPIO] IRQs are not valid for device %s\n", dev->name);
 		return -EINVAL;
 	}
 
@@ -643,7 +643,7 @@ static int mxc_gpio_probe(const void *fdt __unused, struct device *dev, const vo
 	irq_construct_chip(&port->irq_chip, dev, &irq_ops, 32, port, true);
 
 	SLIST_INSERT_HEAD(&mxc_gpio_ports, port, node);
-	IMSG("Registered device %s with memory region (0x%lX, 0x%X) and FIQs %d %d\n", dev->name, paddr, size, port->irq->irq, port->irq_high->irq);
+	IMSG("[GPIO] Registered device %s with memory region (0x%lX, 0x%X) and FIQs %d %d\n", dev->name, paddr, size, port->irq->irq, port->irq_high->irq);
 
 	return 0;
 }

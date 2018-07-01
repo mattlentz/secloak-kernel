@@ -157,7 +157,7 @@ static int gpio_keys_probe(const void *fdt, struct device *dev, const void *data
 	}
 
 	if (!(pdata = malloc(sizeof(*pdata)))) {
-		EMSG("[GPIOKeys] Could not allocate memory for driver structure");
+		EMSG("[GPIOKeys] Could not allocate memory for driver structure for device %s\n", dev->name);
 		return -ENOMEM;
 	}
 	memset(pdata, 0, sizeof(*pdata));
@@ -165,7 +165,7 @@ static int gpio_keys_probe(const void *fdt, struct device *dev, const void *data
 	pdata->nbuttons = nbuttons;
 	pdata->buttons = malloc(sizeof(*pdata->buttons) * nbuttons);
 	if (!pdata->buttons) {
-		EMSG("[GPIOKeys] Could not allocate memory for driver structure");
+		EMSG("[GPIOKeys] Could not allocate memory for driver structure for device %s\n", dev->name);
 		return -ENOMEM;
 	}
 	memset(pdata->buttons, 0, sizeof(*pdata->buttons) * nbuttons);

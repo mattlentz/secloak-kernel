@@ -84,7 +84,6 @@ static void ipu_ch_param_write_field(vaddr_t base, int channel, int w, int bit, 
 
 static bool fb_emu_check(struct region *region __unused, paddr_t address, enum emu_state state, uint32_t *value __unused) {
 	paddr_t offset = address - region->base;
-	EMSG("Emu Check with offset 0x%lX", offset);
 	switch (offset) {
 		case 0x3005E0: // Buffer 0 Address Register
 		case 0x3005E4: // Buffer 1 Address Register
@@ -111,7 +110,7 @@ bool fb_acquire(struct fb_info *info, uint8_t r, uint8_t g, uint8_t b) {
 	info->height = ipu_ch_param_read_field(g_cpmem_vaddr, IPU_CHAN0, 0, 138, 12) + 1;
 	info->stride = info->width * 3;
 
-	EMSG("[FB] Screen Size of %dx%d", info->width, info->height);
+	IMSG("[FB] Screen Size of %dx%d", info->width, info->height);
 
 	// Using memory configured by CFG_FBMEM_START and CFG_FBMEM_SIZE, which
 	// is protected by the TZASC to be Secure RW + Non-Secure R
@@ -204,14 +203,14 @@ void fb_blit_all(struct fb_info *info, const struct blit *blits, int num_blits) 
 static int fb_probe(const void *fdt __unused, struct device *dev, const void *data __unused)
 {
 	if (dev->num_resources != 1 || dev->resource_type != RESOURCE_MEM) {
-		EMSG("Resource is not valid for device %s\n", dev->name);
+		EMSG("[FB] Resource is not valid for device %s\n", dev->name);
 		return -EINVAL;
 	}
 
 	paddr_t paddr = dev->resources[0].address[0];
 	size_t size = dev->resources[0].size[0];
 	if (!core_mmu_add_mapping(MEM_AREA_IO_SEC, paddr, size)) {
-		EMSG("Could not map I/O memory (paddr %lX, size %X) for device %s\n", paddr, size, dev->name);
+		EMSG("[FB] Could not map I/O memory (paddr %lX, size %X) for device %s\n", paddr, size, dev->name);
 		return -EINVAL;
 	}
 
@@ -221,7 +220,7 @@ static int fb_probe(const void *fdt __unused, struct device *dev, const void *da
 		g_base_vaddr = (vaddr_t)phys_to_virt(paddr, MEM_AREA_IO_SEC);
 		g_cpmem_vaddr = (vaddr_t)phys_to_virt(paddr + IPU_CPMEM_OFFSET, MEM_AREA_IO_SEC);
 
-		IMSG("Registered device %s with memory region (0x%lX, 0x%X)\n", dev->name, paddr, size);
+		IMSG("[FB] Registered device %s with memory region (0x%lX, 0x%X)\n", dev->name, paddr, size);
 	}
 
 	return 0;
