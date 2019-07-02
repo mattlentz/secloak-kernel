@@ -1,0 +1,137 @@
+# Environment Variables Used:
+#   1 loader = The command used to load a file into memory
+#       Usage: $loader [address] [file]
+#       Examples: "load mmc 0:1" or "tftpboot"
+#   2 bootdev = The boot device
+#       Example: "mmcblk0"
+#   3 cpu = The IMX CPU type
+#       Example: "6Q"
+#   4 board = The IMX development board type
+#       Example: "nitrogen6x"
+
+setenv bootargs ''
+
+m4=''
+a_base=0x10000000
+if itest.s x51 == "x${cpu}" ; then
+	a_base=0x90000000
+elif itest.s x53 == "x${cpu}"; then
+	a_base=0x70000000
+elif itest.s x6SX == "x${cpu}" || itest.s x7D == "x${cpu}"; then
+	a_base=0x80000000
+	if itest.s "x1" == "x$m4enabled" ; then
+		run m4boot;
+		m4='-m4';
+	fi
+fi
+
+setexpr a_zImage  ${a_base} + 0x00800000
+setexpr a_fdt     ${a_base} + 0x03000000
+setexpr a_ramdisk ${a_base} + 0x03800000
+setexpr a_sImage  ${a_base} + 0x10000000
+
+if itest.s "x" == "x${dtbname}" ; then
+	if itest.s x6SOLO == "x${cpu}" ; then
+		dtbname=imx6dl-${board}.dtb;
+	elif itest.s x6DL == "x${cpu}" ; then
+		dtbname=imx6dl-${board}.dtb;
+	elif itest.s x6QP == "x${cpu}" ; then
+		dtbname=imx6qp-${board}.dtb;
+	elif itest.s x6SX == "x${cpu}" ; then
+		dtbname=imx6sx-${board}${m4}.dtb;
+	elif itest.s x7D == "x${cpu}" ; then
+		dtbname=imx7d-${board}${m4}.dtb;
+	elif itest.s x51 == "x${cpu}" ; then
+		dtbname=imx51-${board}${m4}.dtb;
+	elif itest.s x53 == "x${cpu}" ; then
+		dtbname=imx53-${board}${m4}.dtb;
+	else
+		dtbname=imx6q-${board}.dtb;
+	fi
+fi
+
+if ${loader} ${a_fdt} ${dtbname} ; then
+	fdt addr ${a_fdt}
+	setenv fdt_high 0xffffffff
+  fdt resize
+else
+	echo "Error loading ${dtbname}";
+	exit;
+fi
+
+if itest.s "x" != "x${cmd_hdmi}" ; then
+	run cmd_hdmi
+	if itest.s x == x${allow_noncea} ; then
+		setenv bootargs ${bootargs} mxc_hdmi.only_cea=1;
+		echo "only CEA modes allowed on HDMI port";
+	else
+		setenv bootargs ${bootargs} mxc_hdmi.only_cea=0;
+		echo "non-CEA modes allowed on HDMI, audio may be affected";
+	fi
+fi
+if itest.s "x" != "x${cmd_lcd}" ; then
+	run cmd_lcd
+	setenv bootargs $bootargs tsc2004.calibration=-67247,-764,272499173,324,69283,-8653010,65536
+fi
+if itest.s "x" != "x${cmd_lvds}" ; then
+	run cmd_lvds
+fi
+if itest.s "x" != "x${cmd_lvds2}" ; then
+	run cmd_lvds2
+fi
+
+setenv bootargs "$bootargs console=${console},115200 vmalloc=128M consoleblank=0 rootwait"
+setenv bootargs $bootargs androidboot.hardware=freescale
+setenv bootargs $bootargs androidboot.bootdev=$bootdev
+
+if itest.s "x" != "x$selinux" ; then
+	setenv bootargs $bootargs androidboot.selinux=$selinux
+fi
+
+# add serial number based on MAC address
+setexpr mac_hi *0x021bc630
+setexpr mac_lo *0x021bc620
+setenv bootargs $bootargs androidboot.serialno="$mac_hi$mac_lo"
+
+if itest.s "x" != "x$hwrotation" ; then
+	setenv bootargs $bootargs androidboot.hwrotation=$hwrotation
+fi
+
+if itest.s "x" != "x$disable_giga" ; then
+  setenv bootargs $bootargs fec.disable_giga=1
+fi
+
+if itest.s "x" != "x$wlmac" ; then
+	setenv bootargs $bootargs wlcore.mac=$wlmac
+	setenv bootargs $bootargs androidboot.wlan.mac=$wlmac
+	setexpr btmac sub "(..:..:..:).(.*)" "\\1b\\2" ${wlmac}
+	setenv bootargs $bootargs androidboot.btmacaddr=${btmac}
+fi
+
+if itest.s "x" != "x$cma" ; then
+	setenv bootargs $bootargs cma=$cma
+fi
+
+if itest.s "x" != "x$gpumem" ; then
+	setenv bootargs $bootargs galcore.contiguousSize=$gpumem
+fi
+
+setenv bootargs $bootargs $extbootargs
+
+if itest.s "x" != "x$show_fdt" ; then
+	fdt print /
+fi
+
+if itest.s "x" != "x$show_env" ; then
+	printenv
+fi
+
+if ${loader} ${a_sImage} sImage ; then
+	if ${loader} ${a_ramdisk} uramdisk.img ; then
+    if ${loader} ${a_zImage} zImage ; then
+		  bootm ${a_sImage} ${a_ramdisk} ${a_fdt} ;
+    fi
+	fi
+fi
+
+echo "Error loading the OS"

@@ -1,0 +1,2570 @@
+From fbed4eecc3916fef22d2d12889c1f77ac06f2d66 Mon Sep 17 00:00:00 2001
+From: Matthew Lentz <mlentz@cs.umd.edu>
+Date: Fri, 2 Jun 2017 08:56:05 -0400
+Subject: [PATCH] Modifications to run Linux in the non-secure world, along
+ with SeCloak device tree annotations and SMC support.
+
+---
+ arch/arm/boot/dts/imx6dl-nitrogen6x.dts            |   2 +
+ arch/arm/boot/dts/imx6q-nitrogen6x-careview.dts    |   2 +
+ arch/arm/boot/dts/imx6q-nitrogen6x.dts             |   7 +
+ arch/arm/boot/dts/imx6q.dtsi                       |   9 +-
+ arch/arm/boot/dts/imx6qdl-nitrogen6x.dtsi          |  24 +
+ arch/arm/boot/dts/imx6qdl.dtsi                     | 176 ++++--
+ .../arm/configs/boundary_android_secpath_defconfig | 588 +++++++++++++++++++++
+ arch/arm/kernel/Makefile                           |   2 +-
+ arch/arm/kernel/armksyms.c                         |   4 +-
+ arch/arm/kernel/smccc-call.S                       |  64 +++
+ arch/arm/mach-imx/system.c                         |  44 +-
+ arch/arm/mm/mmu.c                                  |   3 +-
+ drivers/Makefile                                   |   2 +-
+ drivers/smc/Makefile                               |   1 +
+ drivers/smc/smc_driver.c                           |  63 +++
+ include/linux/arm-smccc.h                          | 134 +++++
+ include/linux/optee_smc.h                          | 482 +++++++++++++++++
+ init/main.c                                        |   3 +-
+ setup_env.sh                                       |   3 +
+ 19 files changed, 1548 insertions(+), 65 deletions(-)
+ create mode 100644 arch/arm/configs/boundary_android_secpath_defconfig
+ create mode 100644 arch/arm/kernel/smccc-call.S
+ create mode 100644 drivers/smc/Makefile
+ create mode 100644 drivers/smc/smc_driver.c
+ create mode 100644 include/linux/arm-smccc.h
+ create mode 100644 include/linux/optee_smc.h
+ create mode 100755 setup_env.sh
+
+diff --git a/arch/arm/boot/dts/imx6dl-nitrogen6x.dts b/arch/arm/boot/dts/imx6dl-nitrogen6x.dts
+index f2008b3880b..7bcf424a914 100644
+--- a/arch/arm/boot/dts/imx6dl-nitrogen6x.dts
++++ b/arch/arm/boot/dts/imx6dl-nitrogen6x.dts
+@@ -31,9 +31,11 @@
+ 	ipu_id = <0>;
+ };
+ 
++/*
+ &ov5640 {
+ 	ipu_id = <0>;
+ };
++*/
+ 
+ &pinctrl_i2c3_adv7180 {
+ 	fsl,pins = <
+diff --git a/arch/arm/boot/dts/imx6q-nitrogen6x-careview.dts b/arch/arm/boot/dts/imx6q-nitrogen6x-careview.dts
+index 1d2d801a123..d0506d40c9f 100644
+--- a/arch/arm/boot/dts/imx6q-nitrogen6x-careview.dts
++++ b/arch/arm/boot/dts/imx6q-nitrogen6x-careview.dts
+@@ -51,6 +51,7 @@
+ 	ipu_id = <1>;
+ };
+ 
++/*
+ &ov5640 {
+ 	ipu_id = <1>;
+ };
+@@ -59,6 +60,7 @@
+ 	ipu_id = <1>;
+ 	csi_id = <0>;
+ };
++*/
+ 
+ &iomuxc_imx6q_nitrogen6x {
+ 	pinctrl_i2c3_adv7391: i2c3-adv7391grp {
+diff --git a/arch/arm/boot/dts/imx6q-nitrogen6x.dts b/arch/arm/boot/dts/imx6q-nitrogen6x.dts
+index 6499e6463fc..50d99dd4574 100644
+--- a/arch/arm/boot/dts/imx6q-nitrogen6x.dts
++++ b/arch/arm/boot/dts/imx6q-nitrogen6x.dts
+@@ -20,6 +20,11 @@
+ / {
+ 	model = "Freescale i.MX6 Quad Nitrogen6x Board";
+ 	compatible = "fsl,imx6q-nitrogen6x", "fsl,imx6q";
++
++	psci {
++		compatible = "arm,psci-0.2";
++		method = "smc";
++	};
+ };
+ 
+ &adv7180 {
+@@ -31,6 +36,7 @@
+ 	ipu_id = <1>;
+ };
+ 
++/*
+ &ov5640 {
+ 	ipu_id = <1>;
+ };
+@@ -39,6 +45,7 @@
+ 	ipu_id = <1>;
+ 	csi_id = <0>;
+ };
++*/
+ 
+ &pinctrl_i2c3_adv7180 {
+ 	fsl,pins = <
+diff --git a/arch/arm/boot/dts/imx6q.dtsi b/arch/arm/boot/dts/imx6q.dtsi
+index 661b33b0210..4406d0fd0d8 100644
+--- a/arch/arm/boot/dts/imx6q.dtsi
++++ b/arch/arm/boot/dts/imx6q.dtsi
+@@ -94,7 +94,7 @@
+ 			fsl,max_ddr_freq = <528000000>;
+ 		};
+ 
+-                gpu@00130000 {
++		gpu@00130000 {
+ 			compatible = "fsl,imx6q-gpu";
+ 			reg = <0x00130000 0x4000>, <0x00134000 0x4000>,
+ 			      <0x02204000 0x4000>, <0x0 0x0>,
+@@ -115,6 +115,7 @@
+ 			resets = <&src 0>, <&src 3>, <&src 3>;
+ 			reset-names = "gpu3d", "gpu2d", "gpuvg";
+ 			power-domains = <&gpc 1>;
++			sp-csu = <56 65>;
+ 		};
+ 
+ 		ocram: sram@00905000 {
+@@ -201,6 +202,8 @@
+ 				 <&clks IMX6QDL_CLK_SATA_REF_100M>,
+ 				 <&clks IMX6QDL_CLK_AHB>;
+ 			clock-names = "sata", "sata_ref", "ahb";
++			sp-csu = <57>;
++			sp-class = "display";
+ 			status = "disabled";
+ 		};
+ 
+@@ -223,10 +226,10 @@
+ 				      "540m", "video_pll";
+ 			resets = <&src 4>;
+ 			bypass_reset = <0>;
+-
+-			};
++			sp-csu = <62>;
+ 		};
+ 	};
++};
+ 
+ 
+ &ldb {
+diff --git a/arch/arm/boot/dts/imx6qdl-nitrogen6x.dtsi b/arch/arm/boot/dts/imx6qdl-nitrogen6x.dtsi
+index d2f772304e3..55a613effee 100644
+--- a/arch/arm/boot/dts/imx6qdl-nitrogen6x.dtsi
++++ b/arch/arm/boot/dts/imx6qdl-nitrogen6x.dtsi
+@@ -539,6 +539,7 @@
+ 		default_bpp = <24>;
+ 		int_clk = <0>;
+ 		late_init = <0>;
++		sp-class = "display-ext";
+ 		status = "disabled";
+ 	};
+ 
+@@ -851,6 +852,7 @@
+ 		clocks = <&clks IMX6QDL_CLK_CKO>;
+ 		VDDA-supply = <&reg_2p5v>;
+ 		VDDIO-supply = <&reg_3p3v>;
++		sp-class = "audio-in";
+ 	};
+ 
+ 	isl1208@6f {
+@@ -868,10 +870,13 @@
+ 	pinctrl-0 = <&pinctrl_i2c2>;
+ 	status = "okay";
+ 
++/*
+ 	hdmi: edid@50 {
+ 		compatible = "fsl,imx6-hdmi-i2c";
+ 		reg = <0x50>;
++		sp-class = "display-ext";
+ 	};
++*/
+ 
+ 	ov5642: ov5642@3d {
+ 		compatible = "ovti,ov5642";
+@@ -889,8 +894,10 @@
+ 		csi_id = <0>;
+ 		mclk = <24000000>;
+ 		mclk_source = <0>;
++		sp-class = "camera";
+ 	};
+ 
++/*
+ 	ov5640_mipi: ov5640_mipi@3e {
+ 		compatible = "ovti,ov5640_mipi";
+ 		reg = <0x3e>;
+@@ -907,6 +914,7 @@
+ 		csi_id = <1>;
+ 		mclk = <22000000>;
+ 		mclk_source = <0>;
++		sp-class = "camera";
+ 	};
+ 
+ 	tc358743_mipi: tc358743_mipi@0f {
+@@ -925,6 +933,7 @@
+ 		mclk = <27000000>;
+ 		mclk_source = <0>;
+ 	};
++*/
+ };
+ 
+ &i2c3 {
+@@ -954,20 +963,25 @@
+ 		cvbs = <1>;
+ 	};
+ 
++/*
+ 	egalax_ts@04 {
+ 		compatible = "eeti,egalax_ts";
+ 		reg = <0x04>;
+ 		interrupts-extended = GPIRQ_I2C3_J7;
+ 		wakeup-gpios = GP_I2C3_J7;
++		sp-class = "touchscreen";
+ 	};
++*/
+ 
+ 	ft5x06_ts@38 {
+ 		compatible = "ft5x06-ts";
+ 		reg = <0x38>;
+ 		interrupts-extended = GPIRQ_I2C3_J7;
+ 		wakeup-gpios = GP_I2C3_J7;
++		sp-class = "touchscreen";
+ 	};
+ 
++/*
+ 	gt911@14 {
+ 		compatible = "goodix,gt911";
+ 		pinctrl-names = "default";
+@@ -977,6 +991,7 @@
+ 		interrupts-extended = GPIRQ_GT911;
+ 		irq-gpios = GP_GT911_IRQ;
+ 		reset-gpios = GP_GT911_RESET;
++		sp-class = "touchscreen";
+ 	};
+ 
+ 	gt911@5d {
+@@ -988,6 +1003,7 @@
+ 		interrupts-extended = GPIRQ_GT911;
+ 		irq-gpios = GP_GT911_IRQ;
+ 		reset-gpios = GP_GT911_RESET;
++		sp-class = "touchscreen";
+ 	};
+ 
+ 	ili210x@41 {
+@@ -995,6 +1011,7 @@
+ 		reg = <0x41>;
+ 		interrupts-extended = GPIRQ_I2C3_J7;
+ 		wakeup-gpios = GP_I2C3_J7;
++		sp-class = "touchscreen";
+ 	};
+ 
+ 	ov5640: ov5640@3c {
+@@ -1012,6 +1029,7 @@
+ 		csi_id = <1>;
+ 		mclk = <24000000>;
+ 		mclk_source = <0>;
++		sp-class = "camera";
+ 	};
+ 
+ 	tsc2004: tsc2004@48 {
+@@ -1021,7 +1039,9 @@
+ 		pinctrl-0 = <&pinctrl_i2c3_tsc2004>;
+ 		interrupts-extended = GPIRQ_TSC2004;
+ 		wakeup-gpios = GP_TSC2004;
++		sp-class = "touchscreen";
+ 	};
++*/
+ };
+ 
+ &ldb {
+@@ -1124,11 +1144,13 @@
+ 
+ &ssi1 {
+ 	fsl,mode = "i2s-slave";
++	sp-class = "audio-in", "audio-out";
+ 	status = "okay";
+ };
+ 
+ &ssi2 {
+ 	fsl,mode = "i2s-slave";
++	sp-class = "audio-in";
+ 	status = "okay";
+ };
+ 
+@@ -1148,6 +1170,7 @@
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&pinctrl_uart3>;
+ 	fsl,uart-has-rtscts;
++	sp-class = "bluetooth";
+ 	status = "okay";
+ };
+ 
+@@ -1178,6 +1201,7 @@
+ 	vqmmc-1-8-v;
+ 	cap-power-off-card;
+ 	keep-power-in-suspend;
++	sp-class = "wifi";
+ 	status = "okay";
+ 
+ 	#address-cells = <1>;
+diff --git a/arch/arm/boot/dts/imx6qdl.dtsi b/arch/arm/boot/dts/imx6qdl.dtsi
+index 90ebfdb939c..8e456d1fa46 100644
+--- a/arch/arm/boot/dts/imx6qdl.dtsi
++++ b/arch/arm/boot/dts/imx6qdl.dtsi
+@@ -90,6 +90,7 @@
+ 		caam_sm: caam-sm@00100000 {
+ 			compatible = "fsl,imx6q-caam-sm";
+ 			reg = <0x00100000 0x3fff>;
++			sp-csu = <35>;
+ 		};
+ 
+ 		dma_apbh: dma-apbh@00110000 {
+@@ -113,6 +114,7 @@
+ 			watchdog-tamper = "enabled";
+ 			internal-boot-tamper = "enabled";
+ 			external-pin-tamper = "disabled";
++			sp-csu = <35>;
+ 		};
+ 
+ 		gpmi: gpmi-nand@00112000 {
+@@ -189,6 +191,7 @@
+ 				 <&clks IMX6QDL_CLK_LVDS1_GATE>,
+ 				 <&clks IMX6QDL_CLK_PCIE_REF_125M>;
+ 			clock-names = "pcie", "pcie_bus", "pcie_phy";
++			sp-csu = <64>;
+ 			status = "disabled";
+ 		};
+ 
+@@ -204,6 +207,8 @@
+ 					<&clks IMX6QDL_CLK_HDMI_IAHB>,
+ 					<&clks IMX6QDL_CLK_HSI_TX>;
+ 			clock-names = "hdmi_isfr", "hdmi_iahb", "mipi_core";
++			sp-csu = <55>;
++			sp-class = "display-ext", "audio-out";
+ 			status = "disabled";
+ 		};
+ 
+@@ -216,6 +221,8 @@
+ 					<&clks IMX6QDL_CLK_HDMI_IAHB>,
+ 					<&clks IMX6QDL_CLK_HSI_TX>;
+ 			clock-names = "hdmi_isfr", "hdmi_iahb", "mipi_core";
++			sp-csu = <55>;
++			sp-class = "display-ext";
+ 			status = "disabled";
+ 		};
+ 
+@@ -227,6 +234,8 @@
+ 			clock-names = "hdmi_isfr", "hdmi_iahb", "mipi_core";
+ 			dmas = <&sdma 2 25 0>;
+ 			dma-names = "tx";
++			sp-csu = <55>;
++			sp-class = "audio-out";
+ 			status = "disabled";
+ 		};
+ 
+@@ -267,6 +276,8 @@
+ 						      "rxtx3", "rxtx4",
+ 						      "rxtx5", "rxtx6",
+ 						      "rxtx7", "dma";
++					sp-csu = <36>;
++					sp-class = "audio-out";
+ 					status = "disabled";
+ 				};
+ 
+@@ -281,6 +292,7 @@
+ 					clock-names = "ipg", "per";
+ 					dmas = <&sdma 3 7 1>, <&sdma 4 7 2>;
+ 					dma-names = "rx", "tx";
++					sp-csu = <37>;
+ 					status = "disabled";
+ 				};
+ 
+@@ -295,6 +307,7 @@
+ 					clock-names = "ipg", "per";
+ 					dmas = <&sdma 5 7 1>, <&sdma 6 7 2>;
+ 					dma-names = "rx", "tx";
++					sp-csu = <38>;
+ 					status = "disabled";
+ 				};
+ 
+@@ -309,6 +322,7 @@
+ 					clock-names = "ipg", "per";
+ 					dmas = <&sdma 7 7 1>, <&sdma 8 7 2>;
+ 					dma-names = "rx", "tx";
++					sp-csu = <39>;
+ 					status = "disabled";
+ 				};
+ 
+@@ -323,6 +337,7 @@
+ 					clock-names = "ipg", "per";
+ 					dmas = <&sdma 9 7 1>, <&sdma 10 7 2>;
+ 					dma-names = "rx", "tx";
++					sp-csu = <40>;
+ 					status = "disabled";
+ 				};
+ 
+@@ -335,6 +350,7 @@
+ 					clock-names = "ipg", "per";
+ 					dmas = <&sdma 25 4 0>, <&sdma 26 4 0>;
+ 					dma-names = "rx", "tx";
++					sp-csu = <42>;
+ 					status = "disabled";
+ 				};
+ 
+@@ -351,6 +367,7 @@
+ 					clock-names = "core", "mem", "extal", "fsys", "dma";
+ 					dmas = <&sdma 23 21 0>, <&sdma 24 21 0>;
+ 					dma-names = "rx", "tx";
++					sp-csu = <43>;
+ 					status = "disabled";
+ 				};
+ 
+@@ -367,6 +384,7 @@
+ 					       <&sdma 38 22 0>;
+ 					dma-names = "rx", "tx";
+ 					fsl,fifo-depth = <15>;
++					sp-csu = <44>;
+ 					status = "disabled";
+ 				};
+ 
+@@ -383,6 +401,7 @@
+ 					       <&sdma 42 22 0>;
+ 					dma-names = "rx", "tx";
+ 					fsl,fifo-depth = <15>;
++					sp-csu = <45>;
+ 					status = "disabled";
+ 				};
+ 
+@@ -399,6 +418,7 @@
+ 					       <&sdma 46 22 0>;
+ 					dma-names = "rx", "tx";
+ 					fsl,fifo-depth = <15>;
++					sp-csu = <46>;
+ 					status = "disabled";
+ 				};
+ 
+@@ -424,6 +444,7 @@
+ 							"txa", "txb", "txc";
+ 					fsl,asrc-rate  = <48000>;
+ 					fsl,asrc-width = <16>;
++					sp-csu = <47>;
+ 					status = "okay";
+ 				};
+ 
+@@ -443,6 +464,7 @@
+ 				clock-names = "per", "ahb";
+ 				resets = <&src 1>;
+ 				iram = <&ocram>;
++				sp-csu = <27>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -461,6 +483,7 @@
+ 				iram = <&ocram>;
+ 				resets = <&src 1>;
+ 				power-domains = <&gpc 1>;
++				sp-csu = <27>;
+ 			};
+ 
+ 			aipstz@0207c000 { /* AIPSTZ1 */
+@@ -475,6 +498,7 @@
+ 				clocks = <&clks IMX6QDL_CLK_IPG>,
+ 					 <&clks IMX6QDL_CLK_PWM1>;
+ 				clock-names = "ipg", "per";
++				sp-csu = <0>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -486,6 +510,7 @@
+ 				clocks = <&clks IMX6QDL_CLK_IPG>,
+ 					 <&clks IMX6QDL_CLK_PWM2>;
+ 				clock-names = "ipg", "per";
++				sp-csu = <0>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -497,6 +522,7 @@
+ 				clocks = <&clks IMX6QDL_CLK_IPG>,
+ 					 <&clks IMX6QDL_CLK_PWM3>;
+ 				clock-names = "ipg", "per";
++				sp-csu = <0>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -508,6 +534,7 @@
+ 				clocks = <&clks IMX6QDL_CLK_IPG>,
+ 					 <&clks IMX6QDL_CLK_PWM4>;
+ 				clock-names = "ipg", "per";
++				sp-csu = <0>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -519,6 +546,7 @@
+ 					 <&clks IMX6QDL_CLK_CAN1_SERIAL>;
+ 				clock-names = "ipg", "per";
+ 				stop-mode = <&gpr 0x34 28 0x10 17>;
++				sp-csu = <1>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -530,6 +558,7 @@
+ 					 <&clks IMX6QDL_CLK_CAN2_SERIAL>;
+ 				clock-names = "ipg", "per";
+ 				stop-mode = <&gpr 0x34 29 0x10 18>;
++				sp-csu = <2>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -541,83 +570,105 @@
+ 					 <&clks IMX6QDL_CLK_GPT_IPG_PER>,
+ 					 <&clks IMX6QDL_CLK_GPT_3M>;
+ 				clock-names = "ipg", "per", "osc_per";
++				sp-csu = <3>;
+ 			};
+ 
+ 			gpio1: gpio@0209c000 {
+ 				compatible = "fsl,imx6q-gpio", "fsl,imx35-gpio";
+ 				reg = <0x0209c000 0x4000>;
+-				interrupts = <0 66 IRQ_TYPE_LEVEL_HIGH>,
+-					     <0 67 IRQ_TYPE_LEVEL_HIGH>;
++				sp-interrupts = <0 66 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 67 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 116 IRQ_TYPE_LEVEL_HIGH>;
++				interrupts = <0 116 IRQ_TYPE_LEVEL_HIGH>;
+ 				gpio-controller;
+ 				#gpio-cells = <2>;
+ 				interrupt-controller;
+ 				#interrupt-cells = <2>;
++				sp-csu = <4>;
+ 			};
+ 
+ 			gpio2: gpio@020a0000 {
+ 				compatible = "fsl,imx6q-gpio", "fsl,imx35-gpio";
+ 				reg = <0x020a0000 0x4000>;
+-				interrupts = <0 68 IRQ_TYPE_LEVEL_HIGH>,
+-					     <0 69 IRQ_TYPE_LEVEL_HIGH>;
++				sp-interrupts = <0 68 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 69 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 117 IRQ_TYPE_LEVEL_HIGH>;
++				interrupts = <0 117 IRQ_TYPE_LEVEL_HIGH>;
+ 				gpio-controller;
+ 				#gpio-cells = <2>;
+ 				interrupt-controller;
+ 				#interrupt-cells = <2>;
++				sp-csu = <4>;
+ 			};
+ 
+ 			gpio3: gpio@020a4000 {
+ 				compatible = "fsl,imx6q-gpio", "fsl,imx35-gpio";
+ 				reg = <0x020a4000 0x4000>;
+-				interrupts = <0 70 IRQ_TYPE_LEVEL_HIGH>,
+-					     <0 71 IRQ_TYPE_LEVEL_HIGH>;
++				sp-interrupts = <0 70 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 71 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 118 IRQ_TYPE_LEVEL_HIGH>;
++				interrupts = <0 118 IRQ_TYPE_LEVEL_HIGH>;
+ 				gpio-controller;
+ 				#gpio-cells = <2>;
+ 				interrupt-controller;
+ 				#interrupt-cells = <2>;
++				sp-csu = <5>;
+ 			};
+ 
+ 			gpio4: gpio@020a8000 {
+ 				compatible = "fsl,imx6q-gpio", "fsl,imx35-gpio";
+ 				reg = <0x020a8000 0x4000>;
+-				interrupts = <0 72 IRQ_TYPE_LEVEL_HIGH>,
+-					     <0 73 IRQ_TYPE_LEVEL_HIGH>;
++				sp-interrupts = <0 72 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 73 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 119 IRQ_TYPE_LEVEL_HIGH>;
++				interrupts = <0 119 IRQ_TYPE_LEVEL_HIGH>;
+ 				gpio-controller;
+ 				#gpio-cells = <2>;
+ 				interrupt-controller;
+ 				#interrupt-cells = <2>;
++				sp-csu = <5>;
+ 			};
+ 
+ 			gpio5: gpio@020ac000 {
+ 				compatible = "fsl,imx6q-gpio", "fsl,imx35-gpio";
+ 				reg = <0x020ac000 0x4000>;
+-				interrupts = <0 74 IRQ_TYPE_LEVEL_HIGH>,
+-					     <0 75 IRQ_TYPE_LEVEL_HIGH>;
++				sp-interrupts = <0 74 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 75 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 120 IRQ_TYPE_LEVEL_HIGH>;
++				interrupts = <0 120 IRQ_TYPE_LEVEL_HIGH>;
+ 				gpio-controller;
+ 				#gpio-cells = <2>;
+ 				interrupt-controller;
+ 				#interrupt-cells = <2>;
++				sp-csu = <6>;
+ 			};
+ 
+ 			gpio6: gpio@020b0000 {
+ 				compatible = "fsl,imx6q-gpio", "fsl,imx35-gpio";
+ 				reg = <0x020b0000 0x4000>;
+-				interrupts = <0 76 IRQ_TYPE_LEVEL_HIGH>,
+-					     <0 77 IRQ_TYPE_LEVEL_HIGH>;
++				sp-interrupts = <0 76 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 77 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 121 IRQ_TYPE_LEVEL_HIGH>;
++				interrupts = <0 121 IRQ_TYPE_LEVEL_HIGH>;
+ 				gpio-controller;
+ 				#gpio-cells = <2>;
+ 				interrupt-controller;
+ 				#interrupt-cells = <2>;
++				sp-csu = <6>;
+ 			};
+ 
+ 			gpio7: gpio@020b4000 {
+ 				compatible = "fsl,imx6q-gpio", "fsl,imx35-gpio";
+ 				reg = <0x020b4000 0x4000>;
+-				interrupts = <0 78 IRQ_TYPE_LEVEL_HIGH>,
+-					     <0 79 IRQ_TYPE_LEVEL_HIGH>;
++				sp-interrupts = <0 78 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 79 IRQ_TYPE_LEVEL_HIGH>,
++					     <0 122 IRQ_TYPE_LEVEL_HIGH>;
++				interrupts = <0 122 IRQ_TYPE_LEVEL_HIGH>;
+ 				gpio-controller;
+ 				#gpio-cells = <2>;
+ 				interrupt-controller;
+ 				#interrupt-cells = <2>;
++				sp-csu = <7>;
+ 			};
+ 
+ 			kpp: kpp@020b8000 {
+@@ -625,6 +676,7 @@
+ 				reg = <0x020b8000 0x4000>;
+ 				interrupts = <0 82 IRQ_TYPE_LEVEL_HIGH>;
+ 				clocks = <&clks IMX6QDL_CLK_IPG>;
++				sp-csu = <8>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -633,6 +685,7 @@
+ 				reg = <0x020bc000 0x4000>;
+ 				interrupts = <0 80 IRQ_TYPE_LEVEL_HIGH>;
+ 				clocks = <&clks IMX6QDL_CLK_DUMMY>;
++				sp-csu = <9>;
+ 			};
+ 
+ 			wdog2: wdog@020c0000 {
+@@ -640,6 +693,7 @@
+ 				reg = <0x020c0000 0x4000>;
+ 				interrupts = <0 81 IRQ_TYPE_LEVEL_HIGH>;
+ 				clocks = <&clks IMX6QDL_CLK_DUMMY>;
++				sp-csu = <10>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -649,6 +703,7 @@
+ 				interrupts = <0 87 IRQ_TYPE_LEVEL_HIGH>,
+ 					     <0 88 IRQ_TYPE_LEVEL_HIGH>;
+ 				#clock-cells = <1>;
++				sp-csu = <11>;
+ 			};
+ 
+ 			anatop: anatop@020c8000 {
+@@ -657,6 +712,7 @@
+ 				interrupts = <0 49 IRQ_TYPE_LEVEL_HIGH>,
+ 					     <0 54 IRQ_TYPE_LEVEL_HIGH>,
+ 					     <0 127 IRQ_TYPE_LEVEL_HIGH>;
++				sp-csu = <12>;
+ 
+ 				regulator-1p1@110 {
+ 					compatible = "fsl,anatop-regulator";
+@@ -772,6 +828,7 @@
+ 				clocks = <&clks IMX6QDL_CLK_USBPHY1>;
+ 				phy-3p0-supply = <&reg_3p0>;
+ 				fsl,anatop = <&anatop>;
++				sp-csu = <16>;
+ 			};
+ 
+ 			usbphy2: usbphy@020ca000 {
+@@ -781,6 +838,7 @@
+ 				clocks = <&clks IMX6QDL_CLK_USBPHY2>;
+ 				phy-3p0-supply = <&reg_3p0>;
+ 				fsl,anatop = <&anatop>;
++				sp-csu = <16>;
+ 			};
+ 
+ 			usbphy_nop1: usbphy_nop1 {
+@@ -798,11 +856,13 @@
+ 			caam_snvs: caam-snvs@020cc000 {
+ 				compatible = "fsl,imx6q-caam-snvs";
+ 				reg = <0x020cc000 0x4000>;
++				sp-csu = <11>;
+ 			};
+ 
+ 			snvs: snvs@020cc000 {
+ 				compatible = "fsl,sec-v4.0-mon", "syscon", "simple-mfd";
+ 				reg = <0x020cc000 0x4000>;
++				sp-csu = <11>;
+ 
+ 				snvs_rtc: snvs-rtc-lp {
+ 					compatible = "fsl,sec-v4.0-mon-rtc-lp";
+@@ -824,11 +884,13 @@
+ 			epit1: epit@020d0000 { /* EPIT1 */
+ 				reg = <0x020d0000 0x4000>;
+ 				interrupts = <0 56 IRQ_TYPE_LEVEL_HIGH>;
++				sp-csu = <3>;
+ 			};
+ 
+ 			epit2: epit@020d4000 { /* EPIT2 */
+ 				reg = <0x020d4000 0x4000>;
+ 				interrupts = <0 57 IRQ_TYPE_LEVEL_HIGH>;
++				sp-csu = <3>;
+ 			};
+ 
+ 			src: src@020d8000 {
+@@ -837,6 +899,7 @@
+ 				interrupts = <0 91 IRQ_TYPE_LEVEL_HIGH>,
+ 					     <0 96 IRQ_TYPE_LEVEL_HIGH>;
+ 				#reset-cells = <1>;
++				sp-csu = <11>;
+ 			};
+ 
+ 			gpc: gpc@020dc000 {
+@@ -855,16 +918,19 @@
+ 					 <&clks IMX6QDL_CLK_OPENVG_AXI>,
+ 					 <&clks IMX6QDL_CLK_VPU_AXI>;
+ 				#power-domain-cells = <1>;
++				sp-csu = <11>;
+ 			};
+ 
+ 			gpr: iomuxc-gpr@020e0000 {
+ 				compatible = "fsl,imx6q-iomuxc-gpr", "syscon";
+ 				reg = <0x020e0000 0x38>;
++				sp-csu = <13>;
+ 			};
+ 
+ 			iomuxc: iomuxc@020e0000 {
+ 				compatible = "fsl,imx6dl-iomuxc", "fsl,imx6q-iomuxc";
+ 				reg = <0x020e0000 0x4000>;
++				sp-csu = <13>;
+ 			};
+ 
+ 			ldb: ldb@020e0008 {
+@@ -895,6 +961,7 @@
+ 				clocks = <&clks IMX6QDL_CLK_DCIC1>, <&clks IMX6QDL_CLK_DCIC1>;
+ 				clock-names = "dcic", "disp-axi";
+ 				gpr = <&gpr>;
++				sp-csu = <14>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -905,6 +972,7 @@
+ 				clocks = <&clks IMX6QDL_CLK_DCIC2>, <&clks IMX6QDL_CLK_DCIC2>;
+ 				clock-names = "dcic", "disp-axi";
+ 				gpr = <&gpr>;
++				sp-csu = <14>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -917,6 +985,7 @@
+ 				clock-names = "ipg", "ahb";
+ 				#dma-cells = <3>;
+ 				fsl,sdma-ram-script-name = "imx/sdma/sdma-imx6q.bin";
++				sp-csu = <15>;
+ 			};
+ 		};
+ 
+@@ -928,29 +997,30 @@
+ 			ranges;
+ 
+ 			crypto: caam@2100000 {
+-                                compatible = "fsl,sec-v4.0";
+-                                #address-cells = <1>;
+-                                #size-cells = <1>;
+-                                reg = <0x2100000 0x40000>;
+-                                ranges = <0 0x2100000 0x40000>;
+-                                interrupt-parent = <&intc>; /* interrupts = <0 92 0x4>; */
+-                                clocks = <&clks IMX6QDL_CAAM_MEM>, <&clks IMX6QDL_CAAM_ACLK>, <&clks IMX6QDL_CAAM_IPG> ,<&clks IMX6QDL_CLK_EIM_SLOW>;
+-                                clock-names = "caam_mem", "caam_aclk", "caam_ipg", "caam_emi_slow";
+-
+-                                sec_jr0: jr0@1000 {
+-                                        compatible = "fsl,sec-v4.0-job-ring";
+-                                        reg = <0x1000 0x1000>;
+-                                        interrupt-parent = <&intc>;
+-                                        interrupts = <0 105 0x4>;
+-                                };
+-
+-                                sec_jr1: jr1@2000 {
+-                                        compatible = "fsl,sec-v4.0-job-ring";
+-                                        reg = <0x2000 0x1000>;
+-                                        interrupt-parent = <&intc>;
+-                                        interrupts = <0 106 0x4>;
+-                                };
++				compatible = "fsl,sec-v4.0";
++				#address-cells = <1>;
++				#size-cells = <1>;
++				reg = <0x2100000 0x40000>;
++				ranges = <0 0x2100000 0x40000>;
++				interrupt-parent = <&intc>; /* interrupts = <0 92 0x4>; */
++				clocks = <&clks IMX6QDL_CAAM_MEM>, <&clks IMX6QDL_CAAM_ACLK>, <&clks IMX6QDL_CAAM_IPG> ,<&clks IMX6QDL_CLK_EIM_SLOW>;
++				clock-names = "caam_mem", "caam_aclk", "caam_ipg", "caam_emi_slow";
++				sp-csu = <35>;
++				
++				sec_jr0: jr0@1000 {
++					compatible = "fsl,sec-v4.0-job-ring";
++					reg = <0x1000 0x1000>;
++					interrupt-parent = <&intc>;
++					interrupts = <0 105 0x4>;
+ 				};
++				
++				sec_jr1: jr1@2000 {
++					compatible = "fsl,sec-v4.0-job-ring";
++					reg = <0x2000 0x1000>;
++					interrupt-parent = <&intc>;
++					interrupts = <0 106 0x4>;
++				};
++			};
+ 
+ 			aipstz@0217c000 { /* AIPSTZ2 */
+ 				reg = <0x0217c000 0x4000>;
+@@ -967,6 +1037,7 @@
+ 				tx-burst-size-dword = <0x10>;
+ 				rx-burst-size-dword = <0x10>;
+ 				fsl,anatop = <&anatop>;
++				sp-csu = <16>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -981,6 +1052,7 @@
+ 				ahb-burst-config = <0x0>;
+ 				tx-burst-size-dword = <0x10>;
+ 				rx-burst-size-dword = <0x10>;
++				sp-csu = <16>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -997,6 +1069,7 @@
+ 				phy_type = "hsic";
+ 				fsl,usbphy = <&usbphy_nop1>;
+ 				fsl,anatop = <&anatop>;
++				sp-csu = <16>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1013,6 +1086,7 @@
+ 				phy_type = "hsic";
+ 				fsl,usbphy = <&usbphy_nop2>;
+ 				fsl,anatop = <&anatop>;
++				sp-csu = <16>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1021,6 +1095,7 @@
+ 				compatible = "fsl,imx6q-usbmisc";
+ 				reg = <0x02184800 0x200>;
+ 				clocks = <&clks IMX6QDL_CLK_USBOH3>;
++				sp-csu = <16>;
+ 			};
+ 
+ 			fec: ethernet@02188000 {
+@@ -1035,6 +1110,8 @@
+ 				clock-names = "ipg", "ahb", "ptp";
+ 				stop-mode = <&gpr 0x34 27>;
+ 				fsl,wakeup_irq = <0>;
++				sp-csu = <17>;
++				sp-class = "network";
+ 				status = "disabled";
+ 			};
+ 
+@@ -1048,6 +1125,7 @@
+ 					 <&clks IMX6QDL_CLK_PLL8_MLB>;
+ 				clock-names = "mlb", "pll8_mlb";
+ 				iram = <&ocram>;
++				sp-csu = <18>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1060,6 +1138,7 @@
+ 					 <&clks IMX6QDL_CLK_USDHC1>;
+ 				clock-names = "ipg", "ahb", "per";
+ 				bus-width = <4>;
++				sp-csu = <19>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1072,6 +1151,7 @@
+ 					 <&clks IMX6QDL_CLK_USDHC2>;
+ 				clock-names = "ipg", "ahb", "per";
+ 				bus-width = <4>;
++				sp-csu = <20>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1084,6 +1164,7 @@
+ 					 <&clks IMX6QDL_CLK_USDHC3>;
+ 				clock-names = "ipg", "ahb", "per";
+ 				bus-width = <4>;
++				sp-csu = <21>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1096,6 +1177,7 @@
+ 					 <&clks IMX6QDL_CLK_USDHC4>;
+ 				clock-names = "ipg", "ahb", "per";
+ 				bus-width = <4>;
++				sp-csu = <22>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1106,6 +1188,7 @@
+ 				reg = <0x021a0000 0x4000>;
+ 				interrupts = <0 36 IRQ_TYPE_LEVEL_HIGH>;
+ 				clocks = <&clks IMX6QDL_CLK_I2C1>;
++				sp-csu = <23>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1116,6 +1199,7 @@
+ 				reg = <0x021a4000 0x4000>;
+ 				interrupts = <0 37 IRQ_TYPE_LEVEL_HIGH>;
+ 				clocks = <&clks IMX6QDL_CLK_I2C2>;
++				sp-csu = <24>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1126,25 +1210,30 @@
+ 				reg = <0x021a8000 0x4000>;
+ 				interrupts = <0 38 IRQ_TYPE_LEVEL_HIGH>;
+ 				clocks = <&clks IMX6QDL_CLK_I2C3>;
++				sp-csu = <25>;
+ 				status = "disabled";
+ 			};
+ 
+ 			romcp@021ac000 {
+ 				reg = <0x021ac000 0x4000>;
++				sp-csu = <26>;
+ 			};
+ 
+ 			mmdc0-1@021b0000 { /* MMDC0-1 */
+ 				compatible = "fsl,imx6q-mmdc-combine";
+ 				reg = <0x021b0000 0x8000>;
++				sp-csu = <27>;
+ 			};
+ 
+ 			mmdc0: mmdc@021b0000 { /* MMDC0 */
+ 				compatible = "fsl,imx6q-mmdc";
+ 				reg = <0x021b0000 0x4000>;
++				sp-csu = <27>;
+ 			};
+ 
+ 			mmdc1: mmdc@021b4000 { /* MMDC1 */
+ 				reg = <0x021b4000 0x4000>;
++				sp-csu = <27>;
+ 			};
+ 
+ 			weim: weim@021b8000 {
+@@ -1152,27 +1241,32 @@
+ 				reg = <0x021b8000 0x4000>;
+ 				interrupts = <0 14 IRQ_TYPE_LEVEL_HIGH>;
+ 				clocks = <&clks IMX6QDL_CLK_EIM_SLOW>;
++				sp-csu = <63>;
+ 			};
+ 
+ 			ocotp: ocotp@021bc000 {
+ 				compatible = "fsl,imx6q-ocotp", "syscon";
+ 				reg = <0x021bc000 0x4000>;
+ 				clocks = <&clks IMX6QDL_CLK_IIM>;
++				sp-csu = <29>;
+ 			};
+ 
+ 			tzasc@021d0000 { /* TZASC1 */
+ 				reg = <0x021d0000 0x4000>;
+ 				interrupts = <0 108 IRQ_TYPE_LEVEL_HIGH>;
++				sp-csu = <32>;
+ 			};
+ 
+ 			tzasc@021d4000 { /* TZASC2 */
+ 				reg = <0x021d4000 0x4000>;
+ 				interrupts = <0 109 IRQ_TYPE_LEVEL_HIGH>;
++				sp-csu = <33>;
+ 			};
+ 
+ 			audmux: audmux@021d8000 {
+ 				compatible = "fsl,imx6q-audmux", "fsl,imx31-audmux";
+ 				reg = <0x021d8000 0x4000>;
++				sp-csu = <34>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1189,11 +1283,15 @@
+ 				 * use hsi_tx for a temporary debug purpose.
+ 				 */
+ 				clock-names = "dphy_clk", "pixel_clk", "cfg_clk";
++				sp-csu = <66>;
++				sp-class = "camera";
+ 				status = "disabled";
+ 			};
+ 
+ 			mipi@021e0000 { /* MIPI-DSI */
+ 				reg = <0x021e0000 0x4000>;
++				sp-class = "camera";
++				sp-csu = <67>;
+ 			};
+ 
+ 			vdoa@021e4000 {
+@@ -1202,6 +1300,7 @@
+ 				interrupts = <0 18 IRQ_TYPE_LEVEL_HIGH>;
+ 				clocks = <&clks IMX6QDL_CLK_VDOA>;
+ 				iram = <&ocram>;
++				sp-csu = <68>;
+ 			};
+ 
+ 			uart2: serial@021e8000 {
+@@ -1213,6 +1312,7 @@
+ 				clock-names = "ipg", "per";
+ 				dmas = <&sdma 27 4 0>, <&sdma 28 4 0>;
+ 				dma-names = "rx", "tx";
++				sp-csu = <69>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1225,6 +1325,7 @@
+ 				clock-names = "ipg", "per";
+ 				dmas = <&sdma 29 4 0>, <&sdma 30 4 0>;
+ 				dma-names = "rx", "tx";
++				sp-csu = <70>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1237,6 +1338,7 @@
+ 				clock-names = "ipg", "per";
+ 				dmas = <&sdma 31 4 0>, <&sdma 32 4 0>;
+ 				dma-names = "rx", "tx";
++				sp-csu = <71>;
+ 				status = "disabled";
+ 			};
+ 
+@@ -1249,6 +1351,7 @@
+ 				clock-names = "ipg", "per";
+ 				dmas = <&sdma 33 4 0>, <&sdma 34 4 0>;
+ 				dma-names = "rx", "tx";
++				sp-csu = <72>;
+ 				status = "disabled";
+ 			};
+ 		};
+@@ -1272,6 +1375,7 @@
+ 				      "540m", "video_pll";
+ 			resets = <&src 2>;
+ 			bypass_reset = <0>;
++			sp-csu = <61>;
+ 		};
+ 
+ 		imx_ion {
+diff --git a/arch/arm/configs/boundary_android_secpath_defconfig b/arch/arm/configs/boundary_android_secpath_defconfig
+new file mode 100644
+index 00000000000..0f4a3dec97a
+--- /dev/null
++++ b/arch/arm/configs/boundary_android_secpath_defconfig
+@@ -0,0 +1,588 @@
++CONFIG_KERNEL_LZO=y
++CONFIG_SYSVIPC=y
++CONFIG_NO_HZ=y
++CONFIG_HIGH_RES_TIMERS=y
++CONFIG_IKCONFIG=y
++CONFIG_LOG_BUF_SHIFT=18
++CONFIG_CGROUPS=y
++CONFIG_CGROUP_DEBUG=y
++CONFIG_CGROUP_FREEZER=y
++CONFIG_CGROUP_CPUACCT=y
++CONFIG_CGROUP_SCHED=y
++CONFIG_RT_GROUP_SCHED=y
++CONFIG_RELAY=y
++CONFIG_BLK_DEV_INITRD=y
++CONFIG_KALLSYMS_ALL=y
++CONFIG_EMBEDDED=y
++# CONFIG_SLUB_DEBUG is not set
++# CONFIG_COMPAT_BRK is not set
++CONFIG_PROFILING=y
++CONFIG_MODULES=y
++CONFIG_MODULE_UNLOAD=y
++CONFIG_MODVERSIONS=y
++CONFIG_MODULE_SRCVERSION_ALL=y
++# CONFIG_BLK_DEV_BSG is not set
++CONFIG_PARTITION_ADVANCED=y
++CONFIG_ARCH_MXC=y
++CONFIG_SOC_IMX6Q=y
++CONFIG_SOC_IMX6SL=y
++CONFIG_SOC_IMX6SX=y
++CONFIG_SOC_IMX7D=y
++CONFIG_MXC_REBOOT_ANDROID_CMD=y
++CONFIG_MX6_RAMOOPS=y
++# CONFIG_SWP_EMULATE is not set
++CONFIG_ARM_KERNMEM_PERMS=y
++CONFIG_PCI=y
++CONFIG_PCI_MSI=y
++CONFIG_PCI_IMX6=y
++CONFIG_SMP=y
++CONFIG_HAVE_ARM_ARCH_TIMER=y
++CONFIG_PREEMPT=y
++CONFIG_AEABI=y
++CONFIG_HIGHMEM=y
++CONFIG_KSM=y
++CONFIG_DEFAULT_MMAP_MIN_ADDR=32768
++CONFIG_CMA=y
++CONFIG_ZSMALLOC=y
++CONFIG_SECCOMP=y
++CONFIG_CMDLINE="noinitrd console=ttymxc0,115200"
++CONFIG_CPU_FREQ=y
++CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE=y
++CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
++CONFIG_CPU_FREQ_GOV_POWERSAVE=y
++CONFIG_CPU_FREQ_GOV_USERSPACE=y
++CONFIG_CPU_FREQ_GOV_ONDEMAND=y
++CONFIG_CPU_FREQ_GOV_CONSERVATIVE=y
++CONFIG_ARM_IMX6Q_CPUFREQ=y
++CONFIG_ARM_IMX7D_CPUFREQ=y
++CONFIG_CPU_IDLE=y
++CONFIG_VFP=y
++CONFIG_NEON=y
++CONFIG_KERNEL_MODE_NEON=y
++# CONFIG_CORE_DUMP_DEFAULT_ELF_HEADERS is not set
++CONFIG_BINFMT_MISC=y
++CONFIG_PM_AUTOSLEEP=y
++CONFIG_PM_WAKELOCKS=y
++CONFIG_PM_WAKELOCKS_LIMIT=0
++# CONFIG_PM_WAKELOCKS_GC is not set
++CONFIG_PM_DEBUG=y
++CONFIG_PM_TEST_SUSPEND=y
++CONFIG_SUSPEND_TIME=y
++CONFIG_NET=y
++CONFIG_PACKET=y
++CONFIG_UNIX=y
++CONFIG_XFRM_USER=y
++CONFIG_NET_KEY=y
++CONFIG_INET=y
++CONFIG_IP_ADVANCED_ROUTER=y
++CONFIG_IP_MULTIPLE_TABLES=y
++CONFIG_IP_PNP=y
++CONFIG_IP_PNP_DHCP=y
++CONFIG_INET_ESP=y
++# CONFIG_INET_XFRM_MODE_TRANSPORT is not set
++# CONFIG_INET_XFRM_MODE_TUNNEL is not set
++# CONFIG_INET_XFRM_MODE_BEET is not set
++# CONFIG_INET_LRO is not set
++CONFIG_INET_DIAG_DESTROY=y
++CONFIG_IPV6=y
++CONFIG_IPV6_ROUTER_PREF=y
++CONFIG_IPV6_ROUTE_INFO=y
++CONFIG_IPV6_OPTIMISTIC_DAD=y
++CONFIG_INET6_AH=y
++CONFIG_INET6_ESP=y
++CONFIG_INET6_IPCOMP=y
++CONFIG_IPV6_MIP6=y
++CONFIG_IPV6_MULTIPLE_TABLES=y
++CONFIG_NETFILTER=y
++CONFIG_NF_CONNTRACK=y
++CONFIG_NF_CONNTRACK_SECMARK=y
++CONFIG_NF_CONNTRACK_EVENTS=y
++CONFIG_NF_CT_PROTO_DCCP=y
++CONFIG_NF_CT_PROTO_SCTP=y
++CONFIG_NF_CT_PROTO_UDPLITE=y
++CONFIG_NF_CONNTRACK_AMANDA=y
++CONFIG_NF_CONNTRACK_FTP=y
++CONFIG_NF_CONNTRACK_H323=y
++CONFIG_NF_CONNTRACK_IRC=y
++CONFIG_NF_CONNTRACK_NETBIOS_NS=y
++CONFIG_NF_CONNTRACK_PPTP=y
++CONFIG_NF_CONNTRACK_SANE=y
++CONFIG_NF_CONNTRACK_TFTP=y
++CONFIG_NF_CT_NETLINK=y
++CONFIG_NETFILTER_XT_TARGET_CLASSIFY=y
++CONFIG_NETFILTER_XT_TARGET_CONNMARK=y
++CONFIG_NETFILTER_XT_TARGET_CONNSECMARK=y
++CONFIG_NETFILTER_XT_TARGET_IDLETIMER=y
++CONFIG_NETFILTER_XT_TARGET_MARK=y
++CONFIG_NETFILTER_XT_TARGET_NFLOG=y
++CONFIG_NETFILTER_XT_TARGET_NFQUEUE=y
++CONFIG_NETFILTER_XT_TARGET_TPROXY=y
++CONFIG_NETFILTER_XT_TARGET_TRACE=y
++CONFIG_NETFILTER_XT_TARGET_SECMARK=y
++CONFIG_NETFILTER_XT_TARGET_TCPMSS=y
++CONFIG_NETFILTER_XT_MATCH_COMMENT=y
++CONFIG_NETFILTER_XT_MATCH_CONNLIMIT=y
++CONFIG_NETFILTER_XT_MATCH_CONNMARK=y
++CONFIG_NETFILTER_XT_MATCH_CONNTRACK=y
++CONFIG_NETFILTER_XT_MATCH_HASHLIMIT=y
++CONFIG_NETFILTER_XT_MATCH_HELPER=y
++CONFIG_NETFILTER_XT_MATCH_IPRANGE=y
++CONFIG_NETFILTER_XT_MATCH_LENGTH=y
++CONFIG_NETFILTER_XT_MATCH_LIMIT=y
++CONFIG_NETFILTER_XT_MATCH_MAC=y
++CONFIG_NETFILTER_XT_MATCH_MARK=y
++CONFIG_NETFILTER_XT_MATCH_POLICY=y
++CONFIG_NETFILTER_XT_MATCH_PKTTYPE=y
++CONFIG_NETFILTER_XT_MATCH_QTAGUID=y
++CONFIG_NETFILTER_XT_MATCH_QUOTA=y
++CONFIG_NETFILTER_XT_MATCH_QUOTA2=y
++CONFIG_NETFILTER_XT_MATCH_SOCKET=y
++CONFIG_NETFILTER_XT_MATCH_STATE=y
++CONFIG_NETFILTER_XT_MATCH_STATISTIC=y
++CONFIG_NETFILTER_XT_MATCH_STRING=y
++CONFIG_NETFILTER_XT_MATCH_TIME=y
++CONFIG_NETFILTER_XT_MATCH_U32=y
++CONFIG_NF_CONNTRACK_IPV4=y
++CONFIG_IP_NF_IPTABLES=y
++CONFIG_IP_NF_MATCH_AH=y
++CONFIG_IP_NF_MATCH_ECN=y
++CONFIG_IP_NF_MATCH_TTL=y
++CONFIG_IP_NF_FILTER=y
++CONFIG_IP_NF_TARGET_REJECT=y
++CONFIG_IP_NF_TARGET_SYNPROXY=y
++CONFIG_IP_NF_NAT=y
++CONFIG_IP_NF_TARGET_MASQUERADE=y
++CONFIG_IP_NF_MANGLE=y
++CONFIG_IP_NF_RAW=y
++CONFIG_IP_NF_SECURITY=y
++CONFIG_IP_NF_ARPTABLES=y
++CONFIG_IP_NF_ARPFILTER=y
++CONFIG_IP_NF_ARP_MANGLE=y
++CONFIG_NF_CONNTRACK_IPV6=y
++CONFIG_NF_NAT_IPV6=y
++CONFIG_NF_NAT_MASQUERADE_IPV6=y
++CONFIG_IP6_NF_IPTABLES=y
++CONFIG_IP6_NF_MATCH_RPFILTER=y
++CONFIG_IP6_NF_FILTER=y
++CONFIG_IP6_NF_TARGET_REJECT=y
++CONFIG_IP6_NF_MANGLE=y
++CONFIG_IP6_NF_RAW=y
++CONFIG_VLAN_8021Q=y
++CONFIG_LLC2=y
++CONFIG_NET_SCHED=y
++CONFIG_NET_SCH_HTB=y
++CONFIG_NET_CLS_U32=y
++CONFIG_NET_EMATCH=y
++CONFIG_NET_EMATCH_U32=y
++CONFIG_NET_CLS_ACT=y
++CONFIG_CAN=y
++CONFIG_CAN_FLEXCAN=y
++CONFIG_CAN_M_CAN=y
++CONFIG_BT=y
++CONFIG_BT_RFCOMM=y
++CONFIG_BT_RFCOMM_TTY=y
++CONFIG_BT_BNEP=y
++CONFIG_BT_BNEP_MC_FILTER=y
++CONFIG_BT_BNEP_PROTO_FILTER=y
++CONFIG_BT_HIDP=y
++CONFIG_BT_HCIBTUSB=y
++CONFIG_BT_HCIUART=y
++CONFIG_BT_HCIUART_H4=y
++CONFIG_BT_HCIUART_LL=y
++CONFIG_BT_WILINK=y
++CONFIG_CFG80211=y
++CONFIG_NL80211_TESTMODE=y
++CONFIG_CFG80211_WEXT=y
++CONFIG_MAC80211=y
++CONFIG_RFKILL=y
++CONFIG_RFKILL_GPIO=y
++CONFIG_DEVTMPFS=y
++CONFIG_DEVTMPFS_MOUNT=y
++# CONFIG_STANDALONE is not set
++CONFIG_DMA_CMA=y
++CONFIG_CMA_SIZE_MBYTES=448
++CONFIG_CONNECTOR=y
++CONFIG_MTD=y
++CONFIG_MTD_CMDLINE_PARTS=y
++CONFIG_MTD_BLOCK=y
++CONFIG_MTD_CFI=y
++CONFIG_MTD_JEDECPROBE=y
++CONFIG_MTD_CFI_STAA=y
++CONFIG_MTD_PHYSMAP_OF=y
++CONFIG_MTD_M25P80=y
++CONFIG_MTD_SST25L=y
++CONFIG_MTD_SPI_NOR=y
++CONFIG_ZRAM=y
++CONFIG_BLK_DEV_LOOP=y
++CONFIG_BLK_DEV_RAM=y
++CONFIG_BLK_DEV_RAM_SIZE=8192
++CONFIG_UID_STAT=y
++CONFIG_UID_CPUTIME=y
++CONFIG_EEPROM_AT24=y
++CONFIG_EEPROM_AT25=y
++CONFIG_TI_ST=y
++CONFIG_ST_HCI=y
++# CONFIG_SCSI_PROC_FS is not set
++CONFIG_BLK_DEV_SD=y
++CONFIG_SCSI_CONSTANTS=y
++CONFIG_SCSI_LOGGING=y
++CONFIG_SCSI_SCAN_ASYNC=y
++# CONFIG_SCSI_LOWLEVEL is not set
++CONFIG_ATA=y
++CONFIG_SATA_AHCI=y
++CONFIG_SATA_AHCI_PLATFORM=y
++CONFIG_AHCI_IMX=y
++CONFIG_PATA_IMX=y
++CONFIG_MD=y
++CONFIG_BLK_DEV_DM=y
++CONFIG_DM_CRYPT=y
++CONFIG_DM_UEVENT=y
++CONFIG_DM_VERITY=y
++CONFIG_NETDEVICES=y
++CONFIG_TUN=y
++# CONFIG_NET_VENDOR_BROADCOM is not set
++# CONFIG_NET_VENDOR_CIRRUS is not set
++# CONFIG_NET_VENDOR_FARADAY is not set
++# CONFIG_NET_VENDOR_INTEL is not set
++# CONFIG_NET_VENDOR_MARVELL is not set
++# CONFIG_NET_VENDOR_MICREL is not set
++# CONFIG_NET_VENDOR_MICROCHIP is not set
++# CONFIG_NET_VENDOR_NATSEMI is not set
++CONFIG_R8169=y
++# CONFIG_NET_VENDOR_SEEQ is not set
++# CONFIG_NET_VENDOR_SMSC is not set
++# CONFIG_NET_VENDOR_STMICRO is not set
++# CONFIG_NET_VENDOR_WIZNET is not set
++CONFIG_AT803X_PHY=y
++CONFIG_MICREL_PHY=y
++CONFIG_PPP=y
++CONFIG_PPP_BSDCOMP=y
++CONFIG_PPP_DEFLATE=y
++CONFIG_PPP_MPPE=y
++CONFIG_PPPOE=y
++CONFIG_PPPOLAC=y
++CONFIG_PPPOPNS=y
++CONFIG_PPP_ASYNC=y
++CONFIG_PPP_SYNC_TTY=y
++CONFIG_USB_PEGASUS=y
++CONFIG_USB_RTL8150=y
++CONFIG_USB_RTL8152=y
++CONFIG_USB_USBNET=y
++CONFIG_USB_NET_CDC_EEM=y
++CONFIG_USB_NET_SMSC95XX=y
++CONFIG_BRCMFMAC=m
++CONFIG_BRCMDBG=y
++CONFIG_WL_TI=y
++CONFIG_WL12XX=m
++CONFIG_WLCORE=y
++CONFIG_WLCORE_SDIO=y
++# CONFIG_WILINK_PLATFORM_DATA is not set
++CONFIG_INPUT_POLLDEV=y
++# CONFIG_INPUT_MOUSEDEV_PSAUX is not set
++CONFIG_INPUT_EVDEV=y
++CONFIG_INPUT_KEYRESET=y
++CONFIG_KEYBOARD_GPIO=y
++CONFIG_KEYBOARD_IMX=y
++# CONFIG_INPUT_MOUSE is not set
++CONFIG_INPUT_JOYSTICK=y
++CONFIG_JOYSTICK_XPAD=y
++CONFIG_JOYSTICK_XPAD_FF=y
++CONFIG_INPUT_TABLET=y
++CONFIG_TABLET_USB_ACECAD=y
++CONFIG_TABLET_USB_AIPTEK=y
++CONFIG_TABLET_USB_GTCO=y
++CONFIG_TABLET_USB_HANWANG=y
++CONFIG_TABLET_USB_KBTAB=y
++CONFIG_INPUT_TOUCHSCREEN=y
++CONFIG_TOUCHSCREEN_AR1020_I2C=y
++CONFIG_TOUCHSCREEN_ATMEL_MXT=y
++CONFIG_TOUCHSCREEN_CR_MULTI=y
++CONFIG_TOUCHSCREEN_EGALAX=y
++CONFIG_TOUCHSCREEN_FT5X06=y
++CONFIG_TOUCHSCREEN_GOODIX=y
++CONFIG_TOUCHSCREEN_GSLX680=y
++CONFIG_TOUCHSCREEN_ILI210X=y
++CONFIG_TOUCHSCREEN_TSC2004=y
++CONFIG_TOUCHSCREEN_AR1010_UART=y
++CONFIG_INPUT_MISC=y
++CONFIG_INPUT_UINPUT=y
++CONFIG_DEVPTS_MULTIPLE_INSTANCES=y
++# CONFIG_LEGACY_PTYS is not set
++# CONFIG_DEVMEM is not set
++# CONFIG_DEVKMEM is not set
++CONFIG_SERIAL_IMX=y
++CONFIG_SERIAL_IMX_CONSOLE=y
++CONFIG_SERIAL_GPS_MAX7W=y
++CONFIG_SERIAL_SC16IS7XX=y
++CONFIG_SERIAL_FSL_LPUART=y
++CONFIG_SERIAL_FSL_LPUART_CONSOLE=y
++CONFIG_FSL_OTP=y
++CONFIG_MAGSTRIPE=y
++CONFIG_SAS=y
++# CONFIG_I2C_COMPAT is not set
++CONFIG_I2C_CHARDEV=y
++CONFIG_I2C_MUX_GPIO=y
++# CONFIG_I2C_HELPER_AUTO is not set
++CONFIG_I2C_ALGOPCF=y
++CONFIG_I2C_ALGOPCA=y
++CONFIG_I2C_IMX=y
++CONFIG_SPI=y
++CONFIG_SPI_IMX=y
++CONFIG_SPI_SPIDEV=y
++CONFIG_GPIO_SYSFS=y
++CONFIG_POWER_SUPPLY=y
++CONFIG_POWER_RESET=y
++CONFIG_POWER_RESET_FAKE=y
++CONFIG_POWER_RESET_GPIO=y
++CONFIG_SENSORS_ADS1000=y
++CONFIG_SENSORS_MAG3110=y
++# CONFIG_MXC_MMA8451 is not set
++CONFIG_THERMAL=y
++CONFIG_CPU_THERMAL=y
++CONFIG_IMX_THERMAL=y
++CONFIG_DEVICE_THERMAL=y
++CONFIG_WATCHDOG=y
++CONFIG_IMX2_WDT=y
++CONFIG_MFD_MAX77823=y
++CONFIG_MFD_ARIZONA_SPI=y
++CONFIG_MFD_WM5102=y
++CONFIG_REGULATOR=y
++CONFIG_REGULATOR_FIXED_VOLTAGE=y
++CONFIG_REGULATOR_ANATOP=y
++CONFIG_REGULATOR_ARIZONA=y
++CONFIG_REGULATOR_PFUZE100=y
++CONFIG_MEDIA_SUPPORT=y
++CONFIG_MEDIA_CAMERA_SUPPORT=y
++CONFIG_MEDIA_ANALOG_TV_SUPPORT=y
++CONFIG_MEDIA_RADIO_SUPPORT=y
++CONFIG_MEDIA_USB_SUPPORT=y
++CONFIG_USB_VIDEO_CLASS=y
++# CONFIG_USB_GSPCA is not set
++CONFIG_MEDIA_PCI_SUPPORT=y
++CONFIG_VIDEO_TW686X=y
++CONFIG_V4L_PLATFORM_DRIVERS=y
++CONFIG_VIDEO_MXC_OUTPUT=y
++CONFIG_VIDEO_MXC_CAPTURE=y
++CONFIG_MXC_CAMERA_OV5640=y
++CONFIG_MXC_CAMERA_OV5642=y
++CONFIG_MXC_CAMERA_OV5640_MIPI=y
++CONFIG_MXC_VIDEO_GS2971=y
++CONFIG_MXC_HDMI_CSI2_TC358743=y
++CONFIG_TC358743_AUDIO=y
++CONFIG_MXC_TVIN_ADV7180=y
++CONFIG_MXC_IPU_DEVICE_QUEUE_SDC=y
++CONFIG_VIDEO_MXC_IPU_OUTPUT=y
++CONFIG_VIDEO_MXC_PXP_V4L2=y
++CONFIG_VIDEO_MXC_CSI_CAMERA=y
++CONFIG_MXC_CAMERA_SUBDEV_OV5640=y
++CONFIG_MXC_CAMERA_SUBDEV_OV5642=y
++CONFIG_MXC_VADC=y
++CONFIG_MXC_MIPI_CSI=y
++CONFIG_MXC_CAMERA_SUBDEV_OV5640_MIPI=y
++CONFIG_SOC_CAMERA=y
++CONFIG_DRM=y
++CONFIG_DRM_VIVANTE=y
++CONFIG_FB=y
++CONFIG_FB_MXS=y
++CONFIG_FB_MXC_SYNC_PANEL=y
++CONFIG_FB_MXC_TVOUT_ADV739X=y
++CONFIG_FB_MXC_LDB=y
++CONFIG_FB_MXC_HDMI=y
++CONFIG_BACKLIGHT_LCD_SUPPORT=y
++CONFIG_LCD_CLASS_DEVICE=y
++CONFIG_LCD_L4F00242T03=y
++CONFIG_LCD_PLATFORM=y
++CONFIG_BACKLIGHT_CLASS_DEVICE=y
++CONFIG_BACKLIGHT_PWM=y
++CONFIG_BACKLIGHT_GPIO=y
++CONFIG_DVI_TFP410=y
++CONFIG_FRAMEBUFFER_CONSOLE=y
++CONFIG_FRAMEBUFFER_CONSOLE_DETECT_PRIMARY=y
++CONFIG_SOUND=y
++CONFIG_SND=y
++CONFIG_SND_USB_AUDIO=y
++CONFIG_SND_SOC=y
++CONFIG_SND_IMX_SOC=y
++CONFIG_SND_SOC_IMX_WM8960=y
++CONFIG_SND_SOC_IMX_SGTL5000=y
++CONFIG_SND_SOC_IMX_WM5102=y
++CONFIG_SND_SOC_IMX_HDMI=y
++CONFIG_HID_MULTITOUCH=y
++CONFIG_USB_XHCI_HCD=y
++CONFIG_USB_EHCI_HCD=y
++CONFIG_USB_EHCI_MXC=y
++CONFIG_USB_HCD_TEST_MODE=y
++CONFIG_USB_ACM=y
++CONFIG_USB_STORAGE=y
++CONFIG_USB_CHIPIDEA=y
++CONFIG_USB_CHIPIDEA_UDC=y
++CONFIG_USB_CHIPIDEA_HOST=y
++CONFIG_USB_SERIAL=y
++CONFIG_USB_SERIAL_GENERIC=y
++CONFIG_USB_SERIAL_CP210X=y
++CONFIG_USB_SERIAL_FTDI_SIO=y
++CONFIG_USB_SERIAL_KEYSPAN=y
++CONFIG_USB_SERIAL_PL2303=y
++CONFIG_USB_SERIAL_QUALCOMM=y
++CONFIG_USB_SERIAL_OPTION=y
++CONFIG_USB_EHSET_TEST_FIXTURE=y
++CONFIG_USB_OTG_WAKELOCK=y
++CONFIG_NOP_USB_XCEIV=y
++CONFIG_USB_MXS_PHY=y
++CONFIG_USB_GADGET=y
++CONFIG_USB_CONFIGFS=y
++CONFIG_USB_CONFIGFS_SERIAL=y
++CONFIG_USB_CONFIGFS_ACM=y
++CONFIG_USB_CONFIGFS_OBEX=y
++CONFIG_USB_CONFIGFS_NCM=y
++CONFIG_USB_CONFIGFS_ECM=y
++CONFIG_USB_CONFIGFS_ECM_SUBSET=y
++CONFIG_USB_CONFIGFS_RNDIS=y
++CONFIG_USB_CONFIGFS_EEM=y
++CONFIG_USB_CONFIGFS_MASS_STORAGE=y
++CONFIG_USB_CONFIGFS_F_LB_SS=y
++CONFIG_USB_CONFIGFS_F_FS=y
++CONFIG_USB_CONFIGFS_F_MTP=y
++CONFIG_USB_CONFIGFS_F_PTP=y
++CONFIG_USB_CONFIGFS_F_ACC=y
++CONFIG_USB_CONFIGFS_F_AUDIO_SRC=y
++CONFIG_USB_CONFIGFS_UEVENT=y
++CONFIG_USB_CONFIGFS_F_MIDI=y
++CONFIG_MMC=y
++CONFIG_MMC_SDHCI=y
++CONFIG_MMC_SDHCI_PLTFM=y
++CONFIG_MMC_SDHCI_ESDHC_IMX=y
++CONFIG_MXC_IPU=y
++CONFIG_MXC_IPU_V3_PRE=y
++CONFIG_MXC_GPU_VIV=y
++CONFIG_GPU_LOW_MEMORY_KILLER=y
++CONFIG_MXC_SIM=y
++CONFIG_MXC_MIPI_CSI2=y
++CONFIG_MXC_HDMI_CEC=y
++CONFIG_NEW_LEDS=y
++CONFIG_LEDS_CLASS=y
++CONFIG_LEDS_CLASS_FLASH=y
++CONFIG_LEDS_GPIO=y
++CONFIG_LEDS_PWM=y
++CONFIG_LEDS_TRIGGERS=y
++CONFIG_LEDS_TRIGGER_TIMER=y
++CONFIG_LEDS_TRIGGER_ONESHOT=y
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
++CONFIG_LEDS_TRIGGER_BACKLIGHT=y
++CONFIG_LEDS_TRIGGER_GPIO=y
++CONFIG_LEDS_TRIGGER_TRANSIENT=y
++CONFIG_LEDS_TRIGGER_CAMERA=y
++CONFIG_RTC_CLASS=y
++CONFIG_RTC_INTF_DEV_UIE_EMUL=y
++CONFIG_RTC_DRV_ISL1208=y
++CONFIG_RTC_DRV_RV4162=y
++CONFIG_RTC_DRV_SNVS=y
++CONFIG_DMADEVICES=y
++CONFIG_MXC_PXP_V2=y
++CONFIG_MXC_PXP_V3=y
++# CONFIG_MX3_IPU is not set
++CONFIG_IMX_SDMA=y
++CONFIG_MXS_DMA=y
++CONFIG_STAGING=y
++CONFIG_STAGING_MEDIA=y
++CONFIG_ASHMEM=y
++CONFIG_ANDROID_TIMED_GPIO=y
++CONFIG_ANDROID_LOW_MEMORY_KILLER=y
++CONFIG_SYNC=y
++CONFIG_ION=y
++CONFIG_ION_MXC=y
++CONFIG_COMMON_CLK_PWM=y
++# CONFIG_IOMMU_SUPPORT is not set
++# CONFIG_IMX_RPMSG_PINGPONG is not set
++# CONFIG_IMX_RPMSG_TTY is not set
++CONFIG_EXTCON=y
++CONFIG_IIO=y
++CONFIG_APDS9300=y
++CONFIG_PWM=y
++CONFIG_PWM_IMX=y
++CONFIG_ANDROID=y
++CONFIG_ANDROID_BINDER_IPC=y
++CONFIG_BATTERY_SAMSUNG=y
++CONFIG_FUELGAUGE_MAX77823=y
++CONFIG_FUELGAUGE_MAX77823_COULOMB_COUNTING=y
++CONFIG_CHARGER_MAX77823=y
++CONFIG_EXT2_FS=y
++CONFIG_EXT2_FS_XATTR=y
++CONFIG_EXT2_FS_POSIX_ACL=y
++CONFIG_EXT2_FS_SECURITY=y
++CONFIG_EXT3_FS=y
++CONFIG_EXT3_FS_POSIX_ACL=y
++CONFIG_EXT3_FS_SECURITY=y
++CONFIG_EXT4_FS=y
++CONFIG_EXT4_FS_POSIX_ACL=y
++CONFIG_EXT4_FS_SECURITY=y
++CONFIG_F2FS_FS=y
++CONFIG_F2FS_FS_SECURITY=y
++CONFIG_QUOTA=y
++CONFIG_QUOTA_NETLINK_INTERFACE=y
++# CONFIG_PRINT_QUOTA_WARNING is not set
++CONFIG_AUTOFS4_FS=y
++CONFIG_FUSE_FS=y
++CONFIG_OVERLAY_FS=y
++CONFIG_MSDOS_FS=y
++CONFIG_VFAT_FS=y
++CONFIG_NTFS_FS=y
++CONFIG_NTFS_DEBUG=y
++CONFIG_NTFS_RW=y
++CONFIG_TMPFS=y
++CONFIG_TMPFS_POSIX_ACL=y
++CONFIG_ECRYPT_FS=y
++CONFIG_SQUASHFS=y
++CONFIG_PSTORE=y
++CONFIG_PSTORE_CONSOLE=y
++CONFIG_PSTORE_RAM=y
++CONFIG_NFS_FS=y
++CONFIG_NFS_V3_ACL=y
++CONFIG_NFS_V4=y
++CONFIG_ROOT_NFS=y
++CONFIG_NLS_DEFAULT="cp437"
++CONFIG_NLS_CODEPAGE_437=y
++CONFIG_NLS_ASCII=y
++CONFIG_NLS_ISO8859_1=y
++CONFIG_NLS_ISO8859_15=y
++CONFIG_NLS_UTF8=y
++CONFIG_MAGIC_SYSRQ=y
++CONFIG_DETECT_HUNG_TASK=y
++CONFIG_PANIC_TIMEOUT=5
++CONFIG_SCHEDSTATS=y
++CONFIG_TIMER_STATS=y
++# CONFIG_DEBUG_BUGVERBOSE is not set
++CONFIG_ENABLE_DEFAULT_TRACERS=y
++CONFIG_SECURITY=y
++CONFIG_SECURITY_SELINUX=y
++CONFIG_SECURITY_APPARMOR=y
++CONFIG_SECURITY_YAMA=y
++CONFIG_CRYPTO_USER=y
++CONFIG_CRYPTO_CTS=y
++CONFIG_CRYPTO_LRW=y
++CONFIG_CRYPTO_XTS=y
++CONFIG_CRYPTO_MD4=y
++CONFIG_CRYPTO_MICHAEL_MIC=y
++CONFIG_CRYPTO_RMD128=y
++CONFIG_CRYPTO_RMD160=y
++CONFIG_CRYPTO_RMD256=y
++CONFIG_CRYPTO_RMD320=y
++CONFIG_CRYPTO_SHA512=y
++CONFIG_CRYPTO_TGR192=y
++CONFIG_CRYPTO_WP512=y
++CONFIG_CRYPTO_BLOWFISH=y
++CONFIG_CRYPTO_CAMELLIA=y
++CONFIG_CRYPTO_TWOFISH=y
++# CONFIG_CRYPTO_ANSI_CPRNG is not set
++CONFIG_CRYPTO_DEV_FSL_CAAM=n
++CONFIG_CRYPTO_DEV_FSL_CAAM_SM=n
++CONFIG_ARM_CRYPTO=y
++CONFIG_CRYPTO_AES_ARM_BS=y
++CONFIG_CRC_T10DIF=y
++CONFIG_CRC7=y
++CONFIG_FONTS=y
++CONFIG_FONT_8x8=y
++CONFIG_FONT_8x16=y
++CONFIG_ARM_PSCI=y
++CONFIG_SECPATH=y
++CONFIG_SECPATH_DEBUG=y
+diff --git a/arch/arm/kernel/Makefile b/arch/arm/kernel/Makefile
+index 752725dcbf4..4fa743ad7db 100644
+--- a/arch/arm/kernel/Makefile
++++ b/arch/arm/kernel/Makefile
+@@ -18,7 +18,7 @@ CFLAGS_REMOVE_return_address.o = -pg
+ obj-y		:= elf.o entry-common.o irq.o opcodes.o \
+ 		   process.o ptrace.o reboot.o return_address.o \
+ 		   setup.o signal.o sigreturn_codes.o \
+-		   stacktrace.o sys_arm.o time.o traps.o
++		   stacktrace.o sys_arm.o time.o traps.o smccc-call.o
+ 
+ obj-$(CONFIG_ATAGS)		+= atags_parse.o
+ obj-$(CONFIG_ATAGS_PROC)	+= atags_proc.o
+diff --git a/arch/arm/kernel/armksyms.c b/arch/arm/kernel/armksyms.c
+index a35d72d30b5..812353cd112 100644
+--- a/arch/arm/kernel/armksyms.c
++++ b/arch/arm/kernel/armksyms.c
+@@ -16,7 +16,7 @@
+ #include <linux/syscalls.h>
+ #include <linux/uaccess.h>
+ #include <linux/io.h>
+-
++#include <linux/arm-smccc.h>
+ #include <asm/checksum.h>
+ #include <asm/ftrace.h>
+ 
+@@ -169,3 +169,5 @@ EXPORT_SYMBOL(__gnu_mcount_nc);
+ EXPORT_SYMBOL(__pv_phys_pfn_offset);
+ EXPORT_SYMBOL(__pv_offset);
+ #endif
++EXPORT_SYMBOL(__arm_smccc_smc);
++EXPORT_SYMBOL(__arm_smccc_hvc);
+diff --git a/arch/arm/kernel/smccc-call.S b/arch/arm/kernel/smccc-call.S
+new file mode 100644
+index 00000000000..e5d43066b88
+--- /dev/null
++++ b/arch/arm/kernel/smccc-call.S
+@@ -0,0 +1,64 @@
++/*
++ * Copyright (c) 2015, Linaro Limited
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++#include <linux/linkage.h>
++
++#include <asm/opcodes-sec.h>
++#include <asm/opcodes-virt.h>
++#include <asm/unwind.h>
++
++	/*
++	 * Wrap c macros in asm macros to delay expansion until after the
++	 * SMCCC asm macro is expanded.
++	 */
++	.macro SMCCC_SMC
++	__SMC(0)
++	.endm
++
++	.macro SMCCC_HVC
++	__HVC(0)
++	.endm
++
++	.macro SMCCC instr
++UNWIND(	.fnstart)
++	mov	r12, sp
++	push	{r4-r7}
++UNWIND(	.save	{r4-r7})
++	ldm	r12, {r4-r7}
++	\instr
++	pop	{r4-r7}
++	ldr	r12, [sp, #(4 * 4)]
++	stm	r12, {r0-r3}
++	bx	lr
++UNWIND(	.fnend)
++	.endm
++
++/*
++ * void smccc_smc(unsigned long a0, unsigned long a1, unsigned long a2,
++ *		  unsigned long a3, unsigned long a4, unsigned long a5,
++ *		  unsigned long a6, unsigned long a7, struct arm_smccc_res *res,
++ *		  struct arm_smccc_quirk *quirk)
++ */
++ENTRY(__arm_smccc_smc)
++	SMCCC SMCCC_SMC
++ENDPROC(__arm_smccc_smc)
++
++/*
++ * void smccc_hvc(unsigned long a0, unsigned long a1, unsigned long a2,
++ *		  unsigned long a3, unsigned long a4, unsigned long a5,
++ *		  unsigned long a6, unsigned long a7, struct arm_smccc_res *res,
++ *		  struct arm_smccc_quirk *quirk)
++ */
++ENTRY(__arm_smccc_hvc)
++	SMCCC SMCCC_HVC
++ENDPROC(__arm_smccc_hvc)
+diff --git a/arch/arm/mach-imx/system.c b/arch/arm/mach-imx/system.c
+index 568d06e4ec6..b7e8ec26f9e 100644
+--- a/arch/arm/mach-imx/system.c
++++ b/arch/arm/mach-imx/system.c
+@@ -106,27 +106,29 @@ void __init imx_init_l2cache(void)
+ 		goto out;
+ 	}
+ 
+-	/* Configure the L2 PREFETCH and POWER registers */
+-	/* Set prefetch offset with any value except 23 as per errata 765569 */
+-	val = readl_relaxed(l2x0_base + L310_PREFETCH_CTRL);
+-	val |= 0x7000000f;
+-	/*
+-	 * The L2 cache controller(PL310) version on the i.MX6D/Q is r3p1-50rel0
+-	 * The L2 cache controller(PL310) version on the i.MX6DL/SOLO/SL/SX/DQP
+-	 * is r3p2.
+-	 * But according to ARM PL310 errata: 752271
+-	 * ID: 752271: Double linefill feature can cause data corruption
+-	 * Fault Status: Present in: r3p0, r3p1, r3p1-50rel0. Fixed in r3p2
+-	 * Workaround: The only workaround to this erratum is to disable the
+-	 * double linefill feature. This is the default behavior.
+-	 */
+-	cache_id = readl_relaxed(l2x0_base + L2X0_CACHE_ID);
+-	if (((cache_id & L2X0_CACHE_ID_PART_MASK) == L2X0_CACHE_ID_PART_L310)
+-	    && ((cache_id & L2X0_CACHE_ID_RTL_MASK) < L310_CACHE_ID_RTL_R3P2))
+-		val &= ~(1 << 30);
+-	writel_relaxed(val, l2x0_base + L310_PREFETCH_CTRL);
+-	val = L310_DYNAMIC_CLK_GATING_EN | L310_STNDBY_MODE_EN;
+-	writel_relaxed(val, l2x0_base + L310_POWER_CTRL);
++	if (!readl_relaxed(l2x0_base + L2X0_CTRL) & L2X0_CTRL_EN) {
++		/* Configure the L2 PREFETCH and POWER registers */
++		/* Set prefetch offset with any value except 23 as per errata 765569 */
++		val = readl_relaxed(l2x0_base + L310_PREFETCH_CTRL);
++		val |= 0x7000000f;
++		/*
++		 * The L2 cache controller(PL310) version on the i.MX6D/Q is r3p1-50rel0
++		 * The L2 cache controller(PL310) version on the i.MX6DL/SOLO/SL/SX/DQP
++		 * is r3p2.
++		 * But according to ARM PL310 errata: 752271
++		 * ID: 752271: Double linefill feature can cause data corruption
++		 * Fault Status: Present in: r3p0, r3p1, r3p1-50rel0. Fixed in r3p2
++		 * Workaround: The only workaround to this erratum is to disable the
++		 * double linefill feature. This is the default behavior.
++		 */
++		cache_id = readl_relaxed(l2x0_base + L2X0_CACHE_ID);
++		if (((cache_id & L2X0_CACHE_ID_PART_MASK) == L2X0_CACHE_ID_PART_L310)
++		    && ((cache_id & L2X0_CACHE_ID_RTL_MASK) < L310_CACHE_ID_RTL_R3P2))
++			val &= ~(1 << 30);
++		writel_relaxed(val, l2x0_base + L310_PREFETCH_CTRL);
++		val = L310_DYNAMIC_CLK_GATING_EN | L310_STNDBY_MODE_EN;
++		writel_relaxed(val, l2x0_base + L310_POWER_CTRL);
++	}
+ 
+ 	iounmap(l2x0_base);
+ 	of_node_put(np);
+diff --git a/arch/arm/mm/mmu.c b/arch/arm/mm/mmu.c
+index cde65f1d777..8e33f18331b 100644
+--- a/arch/arm/mm/mmu.c
++++ b/arch/arm/mm/mmu.c
+@@ -244,7 +244,8 @@ __setup("noalign", noalign_setup);
+ 
+ static struct mem_type mem_types[] = {
+ 	[MT_DEVICE] = {		  /* Strongly ordered / ARMv6 shared device */
+-		.prot_pte	= PROT_PTE_DEVICE | L_PTE_MT_DEV_SHARED |
++		.prot_pte	= PROT_PTE_DEVICE | L_PTE_MT_UNCACHED |
++				  //PROT_PTE_DEVICE | L_PTE_MT_DEV_SHARED |
+ 				  L_PTE_SHARED,
+ 		.prot_pte_s2	= s2_policy(PROT_PTE_S2_DEVICE) |
+ 				  s2_policy(L_PTE_S2_MT_DEV_SHARED) |
+diff --git a/drivers/Makefile b/drivers/Makefile
+index a5eec9e53d9..a32a22c6789 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -7,7 +7,7 @@
+ 
+ obj-y				+= irqchip/
+ obj-y				+= bus/
+-
++obj-y				+= smc/
+ obj-$(CONFIG_GENERIC_PHY)	+= phy/
+ 
+ # GPIO must come after pinctrl as gpios may need to mux pins etc
+diff --git a/drivers/smc/Makefile b/drivers/smc/Makefile
+new file mode 100644
+index 00000000000..3f528d32058
+--- /dev/null
++++ b/drivers/smc/Makefile
+@@ -0,0 +1 @@
++obj-m		+= smc_driver.o
+diff --git a/drivers/smc/smc_driver.c b/drivers/smc/smc_driver.c
+new file mode 100644
+index 00000000000..ce9c3dee666
+--- /dev/null
++++ b/drivers/smc/smc_driver.c
+@@ -0,0 +1,63 @@
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/fs.h>
++#include <linux/miscdevice.h>
++#include <asm/uaccess.h>
++
++#include <linux/arm-smccc.h>
++#include <linux/optee_smc.h>
++ 
++static ssize_t device_write(struct file *filp, const char __user *buff, size_t len, loff_t *off)
++{
++  struct arm_smccc_res result;
++  unsigned int x = *(int *)buff;
++  printk ("In smc_driver's write %x %x %x %x %d\n", buff[3], buff[2], buff[1], buff[0], x);
++  arm_smccc_smc(OPTEE_SMC_IOCLOAK_SET, x, 0, 0, 0, 0, 0, 0, &result);
++
++  return len;
++}
++
++static int device_open(struct inode *inode, struct file *file)
++{
++  printk ("In smc_driver's open\n");
++  return 0;
++}
++
++static int device_release(struct inode *inode, struct file *file)
++{
++  printk ("In smc_driver's close\n");
++  return 0;
++}
++
++static struct file_operations fops = {
++        .owner = THIS_MODULE,
++        .write = device_write,
++        .open = device_open,
++        .release = device_release,
++};
++
++static struct miscdevice smc_miscdev = {
++        .name         = "smc_driver",
++        .mode         = S_IRWXUGO,
++        .fops         = &fops,
++};
++
++static int __init smc_driver_module_init(void)
++{
++  int ret = misc_register(&smc_miscdev);
++  if (ret < 0) {
++    printk ("Registering the smc driver failed\n");
++    return ret;
++  }
++  printk("create node with mknod /dev/smc_driver\n");
++  return 0;
++}
++
++static void __exit smc_driver_module_exit(void)
++{
++  misc_deregister(&smc_miscdev);
++}  
++
++module_init(smc_driver_module_init);
++module_exit(smc_driver_module_exit);
++MODULE_LICENSE("GPL");
+diff --git a/include/linux/arm-smccc.h b/include/linux/arm-smccc.h
+new file mode 100644
+index 00000000000..4c5bca38c65
+--- /dev/null
++++ b/include/linux/arm-smccc.h
+@@ -0,0 +1,134 @@
++/*
++ * Copyright (c) 2015, Linaro Limited
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++#ifndef __LINUX_ARM_SMCCC_H
++#define __LINUX_ARM_SMCCC_H
++
++/*
++ * This file provides common defines for ARM SMC Calling Convention as
++ * specified in
++ * http://infocenter.arm.com/help/topic/com.arm.doc.den0028a/index.html
++ */
++
++#define ARM_SMCCC_STD_CALL		0
++#define ARM_SMCCC_FAST_CALL		1
++#define ARM_SMCCC_TYPE_SHIFT		31
++
++#define ARM_SMCCC_SMC_32		0
++#define ARM_SMCCC_SMC_64		1
++#define ARM_SMCCC_CALL_CONV_SHIFT	30
++
++#define ARM_SMCCC_OWNER_MASK		0x3F
++#define ARM_SMCCC_OWNER_SHIFT		24
++
++#define ARM_SMCCC_FUNC_MASK		0xFFFF
++
++#define ARM_SMCCC_IS_FAST_CALL(smc_val)	\
++	((smc_val) & (ARM_SMCCC_FAST_CALL << ARM_SMCCC_TYPE_SHIFT))
++#define ARM_SMCCC_IS_64(smc_val) \
++	((smc_val) & (ARM_SMCCC_SMC_64 << ARM_SMCCC_CALL_CONV_SHIFT))
++#define ARM_SMCCC_FUNC_NUM(smc_val)	((smc_val) & ARM_SMCCC_FUNC_MASK)
++#define ARM_SMCCC_OWNER_NUM(smc_val) \
++	(((smc_val) >> ARM_SMCCC_OWNER_SHIFT) & ARM_SMCCC_OWNER_MASK)
++
++#define ARM_SMCCC_CALL_VAL(type, calling_convention, owner, func_num) \
++	(((type) << ARM_SMCCC_TYPE_SHIFT) | \
++	((calling_convention) << ARM_SMCCC_CALL_CONV_SHIFT) | \
++	(((owner) & ARM_SMCCC_OWNER_MASK) << ARM_SMCCC_OWNER_SHIFT) | \
++	((func_num) & ARM_SMCCC_FUNC_MASK))
++
++#define ARM_SMCCC_OWNER_ARCH		0
++#define ARM_SMCCC_OWNER_CPU		1
++#define ARM_SMCCC_OWNER_SIP		2
++#define ARM_SMCCC_OWNER_OEM		3
++#define ARM_SMCCC_OWNER_STANDARD	4
++#define ARM_SMCCC_OWNER_TRUSTED_APP	48
++#define ARM_SMCCC_OWNER_TRUSTED_APP_END	49
++#define ARM_SMCCC_OWNER_TRUSTED_OS	50
++#define ARM_SMCCC_OWNER_TRUSTED_OS_END	63
++
++#define ARM_SMCCC_QUIRK_NONE		0
++#define ARM_SMCCC_QUIRK_QCOM_A6		1 /* Save/restore register a6 */
++
++#ifndef __ASSEMBLY__
++
++#include <linux/linkage.h>
++#include <linux/types.h>
++/**
++ * struct arm_smccc_res - Result from SMC/HVC call
++ * @a0-a3 result values from registers 0 to 3
++ */
++struct arm_smccc_res {
++	unsigned long a0;
++	unsigned long a1;
++	unsigned long a2;
++	unsigned long a3;
++};
++
++/**
++ * struct arm_smccc_quirk - Contains quirk information
++ * @id: quirk identification
++ * @state: quirk specific information
++ * @a6: Qualcomm quirk entry for returning post-smc call contents of a6
++ */
++struct arm_smccc_quirk {
++	int	id;
++	union {
++		unsigned long a6;
++	} state;
++};
++
++/**
++ * __arm_smccc_smc() - make SMC calls
++ * @a0-a7: arguments passed in registers 0 to 7
++ * @res: result values from registers 0 to 3
++ * @quirk: points to an arm_smccc_quirk, or NULL when no quirks are required.
++ *
++ * This function is used to make SMC calls following SMC Calling Convention.
++ * The content of the supplied param are copied to registers 0 to 7 prior
++ * to the SMC instruction. The return values are updated with the content
++ * from register 0 to 3 on return from the SMC instruction.  An optional
++ * quirk structure provides vendor specific behavior.
++ */
++asmlinkage void __arm_smccc_smc(unsigned long a0, unsigned long a1,
++			unsigned long a2, unsigned long a3, unsigned long a4,
++			unsigned long a5, unsigned long a6, unsigned long a7,
++			struct arm_smccc_res *res, struct arm_smccc_quirk *quirk);
++
++/**
++ * __arm_smccc_hvc() - make HVC calls
++ * @a0-a7: arguments passed in registers 0 to 7
++ * @res: result values from registers 0 to 3
++ * @quirk: points to an arm_smccc_quirk, or NULL when no quirks are required.
++ *
++ * This function is used to make HVC calls following SMC Calling
++ * Convention.  The content of the supplied param are copied to registers 0
++ * to 7 prior to the HVC instruction. The return values are updated with
++ * the content from register 0 to 3 on return from the HVC instruction.  An
++ * optional quirk structure provides vendor specific behavior.
++ */
++asmlinkage void __arm_smccc_hvc(unsigned long a0, unsigned long a1,
++			unsigned long a2, unsigned long a3, unsigned long a4,
++			unsigned long a5, unsigned long a6, unsigned long a7,
++			struct arm_smccc_res *res, struct arm_smccc_quirk *quirk);
++
++#define arm_smccc_smc(...) __arm_smccc_smc(__VA_ARGS__, NULL)
++
++#define arm_smccc_smc_quirk(...) __arm_smccc_smc(__VA_ARGS__)
++
++#define arm_smccc_hvc(...) __arm_smccc_hvc(__VA_ARGS__, NULL)
++
++#define arm_smccc_hvc_quirk(...) __arm_smccc_hvc(__VA_ARGS__)
++
++#endif /*__ASSEMBLY__*/
++#endif /*__LINUX_ARM_SMCCC_H*/
+diff --git a/include/linux/optee_smc.h b/include/linux/optee_smc.h
+new file mode 100644
+index 00000000000..17499f21589
+--- /dev/null
++++ b/include/linux/optee_smc.h
+@@ -0,0 +1,482 @@
++/*
++ * Copyright (c) 2015-2016, Linaro Limited
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *
++ * 1. Redistributions of source code must retain the above copyright notice,
++ * this list of conditions and the following disclaimer.
++ *
++ * 2. Redistributions in binary form must reproduce the above copyright notice,
++ * this list of conditions and the following disclaimer in the documentation
++ * and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
++ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
++ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
++ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
++ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
++ * POSSIBILITY OF SUCH DAMAGE.
++ */
++#ifndef OPTEE_SMC_H
++#define OPTEE_SMC_H
++
++#include <linux/arm-smccc.h>
++#include <linux/bitops.h>
++
++#define OPTEE_SMC_STD_CALL_VAL(func_num) \
++	ARM_SMCCC_CALL_VAL(ARM_SMCCC_STD_CALL, ARM_SMCCC_SMC_32, \
++			   ARM_SMCCC_OWNER_TRUSTED_OS, (func_num))
++#define OPTEE_SMC_FAST_CALL_VAL(func_num) \
++	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32, \
++			   ARM_SMCCC_OWNER_TRUSTED_OS, (func_num))
++
++/*
++ * Function specified by SMC Calling convention.
++ */
++#define OPTEE_SMC_FUNCID_CALLS_COUNT	0xFF00
++#define OPTEE_SMC_CALLS_COUNT \
++	ARM_SMCCC_CALL_VAL(OPTEE_SMC_FAST_CALL, SMCCC_SMC_32, \
++			   SMCCC_OWNER_TRUSTED_OS_END, \
++			   OPTEE_SMC_FUNCID_CALLS_COUNT)
++
++/*
++ * Normal cached memory (write-back), shareable for SMP systems and not
++ * shareable for UP systems.
++ */
++#define OPTEE_SMC_SHM_CACHED		1
++
++/*
++ * a0..a7 is used as register names in the descriptions below, on arm32
++ * that translates to r0..r7 and on arm64 to w0..w7. In both cases it's
++ * 32-bit registers.
++ */
++
++/*
++ * Function specified by SMC Calling convention
++ *
++ * Return one of the following UIDs if using API specified in this file
++ * without further extentions:
++ * 65cb6b93-af0c-4617-8ed6-644a8d1140f8
++ * see also OPTEE_SMC_UID_* in optee_msg.h
++ */
++#define OPTEE_SMC_FUNCID_CALLS_UID OPTEE_MSG_FUNCID_CALLS_UID
++#define OPTEE_SMC_CALLS_UID \
++	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32, \
++			   ARM_SMCCC_OWNER_TRUSTED_OS_END, \
++			   OPTEE_SMC_FUNCID_CALLS_UID)
++
++/*
++ * Function specified by SMC Calling convention
++ *
++ * Returns 2.0 if using API specified in this file without further extentions.
++ * see also OPTEE_MSG_REVISION_* in optee_msg.h
++ */
++#define OPTEE_SMC_FUNCID_CALLS_REVISION OPTEE_MSG_FUNCID_CALLS_REVISION
++#define OPTEE_SMC_CALLS_REVISION \
++	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32, \
++			   ARM_SMCCC_OWNER_TRUSTED_OS_END, \
++			   OPTEE_SMC_FUNCID_CALLS_REVISION)
++
++struct optee_smc_calls_revision_result {
++	unsigned long major;
++	unsigned long minor;
++	unsigned long reserved0;
++	unsigned long reserved1;
++};
++
++/*
++ * Get UUID of Trusted OS.
++ *
++ * Used by non-secure world to figure out which Trusted OS is installed.
++ * Note that returned UUID is the UUID of the Trusted OS, not of the API.
++ *
++ * Returns UUID in a0-4 in the same way as OPTEE_SMC_CALLS_UID
++ * described above.
++ */
++#define OPTEE_SMC_FUNCID_GET_OS_UUID OPTEE_MSG_FUNCID_GET_OS_UUID
++#define OPTEE_SMC_CALL_GET_OS_UUID \
++	OPTEE_SMC_FAST_CALL_VAL(OPTEE_SMC_FUNCID_GET_OS_UUID)
++
++/*
++ * Get revision of Trusted OS.
++ *
++ * Used by non-secure world to figure out which version of the Trusted OS
++ * is installed. Note that the returned revision is the revision of the
++ * Trusted OS, not of the API.
++ *
++ * Returns revision in a0-1 in the same way as OPTEE_SMC_CALLS_REVISION
++ * described above.
++ */
++#define OPTEE_SMC_FUNCID_GET_OS_REVISION OPTEE_MSG_FUNCID_GET_OS_REVISION
++#define OPTEE_SMC_CALL_GET_OS_REVISION \
++	OPTEE_SMC_FAST_CALL_VAL(OPTEE_SMC_FUNCID_GET_OS_REVISION)
++
++/*
++ * Call with struct optee_msg_arg as argument
++ *
++ * Call register usage:
++ * a0	SMC Function ID, OPTEE_SMC*CALL_WITH_ARG
++ * a1	Upper 32bit of a 64bit physical pointer to a struct optee_msg_arg
++ * a2	Lower 32bit of a 64bit physical pointer to a struct optee_msg_arg
++ * a3	Cache settings, not used if physical pointer is in a predefined shared
++ *	memory area else per OPTEE_SMC_SHM_*
++ * a4-6	Not used
++ * a7	Hypervisor Client ID register
++ *
++ * Normal return register usage:
++ * a0	Return value, OPTEE_SMC_RETURN_*
++ * a1-3	Not used
++ * a4-7	Preserved
++ *
++ * OPTEE_SMC_RETURN_ETHREAD_LIMIT return register usage:
++ * a0	Return value, OPTEE_SMC_RETURN_ETHREAD_LIMIT
++ * a1-3	Preserved
++ * a4-7	Preserved
++ *
++ * RPC return register usage:
++ * a0	Return value, OPTEE_SMC_RETURN_IS_RPC(val)
++ * a1-2	RPC parameters
++ * a3-7	Resume information, must be preserved
++ *
++ * Possible return values:
++ * OPTEE_SMC_RETURN_UNKNOWN_FUNCTION	Trusted OS does not recognize this
++ *					function.
++ * OPTEE_SMC_RETURN_OK			Call completed, result updated in
++ *					the previously supplied struct
++ *					optee_msg_arg.
++ * OPTEE_SMC_RETURN_ETHREAD_LIMIT	Number of Trusted OS threads exceeded,
++ *					try again later.
++ * OPTEE_SMC_RETURN_EBADADDR		Bad physcial pointer to struct
++ *					optee_msg_arg.
++ * OPTEE_SMC_RETURN_EBADCMD		Bad/unknown cmd in struct optee_msg_arg
++ * OPTEE_SMC_RETURN_IS_RPC()		Call suspended by RPC call to normal
++ *					world.
++ */
++#define OPTEE_SMC_FUNCID_CALL_WITH_ARG OPTEE_MSG_FUNCID_CALL_WITH_ARG
++#define OPTEE_SMC_CALL_WITH_ARG \
++	OPTEE_SMC_STD_CALL_VAL(OPTEE_SMC_FUNCID_CALL_WITH_ARG)
++
++/*
++ * Get Shared Memory Config
++ *
++ * Returns the Secure/Non-secure shared memory config.
++ *
++ * Call register usage:
++ * a0	SMC Function ID, OPTEE_SMC_GET_SHM_CONFIG
++ * a1-6	Not used
++ * a7	Hypervisor Client ID register
++ *
++ * Have config return register usage:
++ * a0	OPTEE_SMC_RETURN_OK
++ * a1	Physical address of start of SHM
++ * a2	Size of of SHM
++ * a3	Cache settings of memory, as defined by the
++ *	OPTEE_SMC_SHM_* values above
++ * a4-7	Preserved
++ *
++ * Not available register usage:
++ * a0	OPTEE_SMC_RETURN_ENOTAVAIL
++ * a1-3 Not used
++ * a4-7	Preserved
++ */
++#define OPTEE_SMC_FUNCID_GET_SHM_CONFIG	7
++#define OPTEE_SMC_GET_SHM_CONFIG \
++	OPTEE_SMC_FAST_CALL_VAL(OPTEE_SMC_FUNCID_GET_SHM_CONFIG)
++
++struct optee_smc_get_shm_config_result {
++	unsigned long status;
++	unsigned long start;
++	unsigned long size;
++	unsigned long settings;
++};
++
++/*
++ * Exchanges capabilities between normal world and secure world
++ *
++ * Call register usage:
++ * a0	SMC Function ID, OPTEE_SMC_EXCHANGE_CAPABILITIES
++ * a1	bitfield of normal world capabilities OPTEE_SMC_NSEC_CAP_*
++ * a2-6	Not used
++ * a7	Hypervisor Client ID register
++ *
++ * Normal return register usage:
++ * a0	OPTEE_SMC_RETURN_OK
++ * a1	bitfield of secure world capabilities OPTEE_SMC_SEC_CAP_*
++ * a2-7	Preserved
++ *
++ * Error return register usage:
++ * a0	OPTEE_SMC_RETURN_ENOTAVAIL, can't use the capabilities from normal world
++ * a1	bitfield of secure world capabilities OPTEE_SMC_SEC_CAP_*
++ * a2-7 Preserved
++ */
++/* Normal world works as a uniprocessor system */
++#define OPTEE_SMC_NSEC_CAP_UNIPROCESSOR		BIT(0)
++/* Secure world has reserved shared memory for normal world to use */
++#define OPTEE_SMC_SEC_CAP_HAVE_RESERVED_SHM	BIT(0)
++/* Secure world can communicate via previously unregistered shared memory */
++#define OPTEE_SMC_SEC_CAP_UNREGISTERED_SHM	BIT(1)
++#define OPTEE_SMC_FUNCID_EXCHANGE_CAPABILITIES	9
++#define OPTEE_SMC_EXCHANGE_CAPABILITIES \
++	OPTEE_SMC_FAST_CALL_VAL(OPTEE_SMC_FUNCID_EXCHANGE_CAPABILITIES)
++
++struct optee_smc_exchange_capabilities_result {
++	unsigned long status;
++	unsigned long capabilities;
++	unsigned long reserved0;
++	unsigned long reserved1;
++};
++
++/*
++ * Disable and empties cache of shared memory objects
++ *
++ * Secure world can cache frequently used shared memory objects, for
++ * example objects used as RPC arguments. When secure world is idle this
++ * function returns one shared memory reference to free. To disable the
++ * cache and free all cached objects this function has to be called until
++ * it returns OPTEE_SMC_RETURN_ENOTAVAIL.
++ *
++ * Call register usage:
++ * a0	SMC Function ID, OPTEE_SMC_DISABLE_SHM_CACHE
++ * a1-6	Not used
++ * a7	Hypervisor Client ID register
++ *
++ * Normal return register usage:
++ * a0	OPTEE_SMC_RETURN_OK
++ * a1	Upper 32bit of a 64bit Shared memory cookie
++ * a2	Lower 32bit of a 64bit Shared memory cookie
++ * a3-7	Preserved
++ *
++ * Cache empty return register usage:
++ * a0	OPTEE_SMC_RETURN_ENOTAVAIL
++ * a1-7	Preserved
++ *
++ * Not idle return register usage:
++ * a0	OPTEE_SMC_RETURN_EBUSY
++ * a1-7	Preserved
++ */
++#define OPTEE_SMC_FUNCID_DISABLE_SHM_CACHE	10
++#define OPTEE_SMC_DISABLE_SHM_CACHE \
++	OPTEE_SMC_FAST_CALL_VAL(OPTEE_SMC_FUNCID_DISABLE_SHM_CACHE)
++
++struct optee_smc_disable_shm_cache_result {
++	unsigned long status;
++	unsigned long shm_upper32;
++	unsigned long shm_lower32;
++	unsigned long reserved0;
++};
++
++/*
++ * Enable cache of shared memory objects
++ *
++ * Secure world can cache frequently used shared memory objects, for
++ * example objects used as RPC arguments. When secure world is idle this
++ * function returns OPTEE_SMC_RETURN_OK and the cache is enabled. If
++ * secure world isn't idle OPTEE_SMC_RETURN_EBUSY is returned.
++ *
++ * Call register usage:
++ * a0	SMC Function ID, OPTEE_SMC_ENABLE_SHM_CACHE
++ * a1-6	Not used
++ * a7	Hypervisor Client ID register
++ *
++ * Normal return register usage:
++ * a0	OPTEE_SMC_RETURN_OK
++ * a1-7	Preserved
++ *
++ * Not idle return register usage:
++ * a0	OPTEE_SMC_RETURN_EBUSY
++ * a1-7	Preserved
++ */
++#define OPTEE_SMC_FUNCID_ENABLE_SHM_CACHE	11
++#define OPTEE_SMC_ENABLE_SHM_CACHE \
++	OPTEE_SMC_FAST_CALL_VAL(OPTEE_SMC_FUNCID_ENABLE_SHM_CACHE)
++
++/*                                                                                                                                    
++ * Update the IOCloak settings
++ *
++ * Call register usage:
++ * a0 SMC Function ID, OPTEE_SMC_IOCLOAK_SET
++ * a1 Bitfield for enabling/disabling classes of devices
++ * a2 Bitfield for enabling/disabling classes of devices (cont.)
++ *
++ * Normal return register usage:
++ * a0 OPTEE_SMC_RETURN_OK
++ * a1-7 Preserved
++ */
++#define OPTEE_SMC_FUNCID_IOCLOAK_SET  99
++#define OPTEE_SMC_IOCLOAK_SET \
++  OPTEE_SMC_STD_CALL_VAL(OPTEE_SMC_FUNCID_IOCLOAK_SET)
++
++/*
++ * Retrieve the IOCloak settings
++ *
++ * Call register usage:
++ * a0 SMC Function ID, OPTEE_SMC_IOCLOAK_GET
++ *
++ * Normal return register usage:
++ * a0 OPTEE_SMC_RETURN_OK
++ * a1 Bitfield for enabling/disabling classes of devices
++ * a2 Bitfield for enabling/disabling classes of devices (cont.)
++ * a3-7 Preserved
++ */
++#define OPTEE_SMC_FUNCID_IOCLOAK_GET  100
++#define OPTEE_SMC_IOCLOAK_GET \
++  OPTEE_SMC_STD_CALL_VAL(OPTEE_SMC_FUNCID_IOCLOAK_GET)
++
++/*
++ * Resume from RPC (for example after processing a foreign interrupt)
++ *
++ * Call register usage:
++ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC
++ * a1-3	Value of a1-3 when OPTEE_SMC_CALL_WITH_ARG returned
++ *	OPTEE_SMC_RETURN_RPC in a0
++ *
++ * Return register usage is the same as for OPTEE_SMC_*CALL_WITH_ARG above.
++ *
++ * Possible return values
++ * OPTEE_SMC_RETURN_UNKNOWN_FUNCTION	Trusted OS does not recognize this
++ *					function.
++ * OPTEE_SMC_RETURN_OK			Original call completed, result
++ *					updated in the previously supplied.
++ *					struct optee_msg_arg
++ * OPTEE_SMC_RETURN_RPC			Call suspended by RPC call to normal
++ *					world.
++ * OPTEE_SMC_RETURN_ERESUME		Resume failed, the opaque resume
++ *					information was corrupt.
++ */
++#define OPTEE_SMC_FUNCID_RETURN_FROM_RPC	3
++#define OPTEE_SMC_CALL_RETURN_FROM_RPC \
++	OPTEE_SMC_STD_CALL_VAL(OPTEE_SMC_FUNCID_RETURN_FROM_RPC)
++
++#define OPTEE_SMC_RETURN_RPC_PREFIX_MASK	0xFFFF0000
++#define OPTEE_SMC_RETURN_RPC_PREFIX		0xFFFF0000
++#define OPTEE_SMC_RETURN_RPC_FUNC_MASK		0x0000FFFF
++
++#define OPTEE_SMC_RETURN_GET_RPC_FUNC(ret) \
++	((ret) & OPTEE_SMC_RETURN_RPC_FUNC_MASK)
++
++#define OPTEE_SMC_RPC_VAL(func)		((func) | OPTEE_SMC_RETURN_RPC_PREFIX)
++
++/*
++ * Allocate memory for RPC parameter passing. The memory is used to hold a
++ * struct optee_msg_arg.
++ *
++ * "Call" register usage:
++ * a0	This value, OPTEE_SMC_RETURN_RPC_ALLOC
++ * a1	Size in bytes of required argument memory
++ * a2	Not used
++ * a3	Resume information, must be preserved
++ * a4-5	Not used
++ * a6-7	Resume information, must be preserved
++ *
++ * "Return" register usage:
++ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
++ * a1	Upper 32bits of 64bit physical pointer to allocated
++ *	memory, (a1 == 0 && a2 == 0) if size was 0 or if memory can't
++ *	be allocated.
++ * a2	Lower 32bits of 64bit physical pointer to allocated
++ *	memory, (a1 == 0 && a2 == 0) if size was 0 or if memory can't
++ *	be allocated
++ * a3	Preserved
++ * a4	Upper 32bits of 64bit Shared memory cookie used when freeing
++ *	the memory or doing an RPC
++ * a5	Lower 32bits of 64bit Shared memory cookie used when freeing
++ *	the memory or doing an RPC
++ * a6-7	Preserved
++ */
++#define OPTEE_SMC_RPC_FUNC_ALLOC	0
++#define OPTEE_SMC_RETURN_RPC_ALLOC \
++	OPTEE_SMC_RPC_VAL(OPTEE_SMC_RPC_FUNC_ALLOC)
++
++/*
++ * Free memory previously allocated by OPTEE_SMC_RETURN_RPC_ALLOC
++ *
++ * "Call" register usage:
++ * a0	This value, OPTEE_SMC_RETURN_RPC_FREE
++ * a1	Upper 32bits of 64bit shared memory cookie belonging to this
++ *	argument memory
++ * a2	Lower 32bits of 64bit shared memory cookie belonging to this
++ *	argument memory
++ * a3-7	Resume information, must be preserved
++ *
++ * "Return" register usage:
++ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
++ * a1-2	Not used
++ * a3-7	Preserved
++ */
++#define OPTEE_SMC_RPC_FUNC_FREE		2
++#define OPTEE_SMC_RETURN_RPC_FREE \
++	OPTEE_SMC_RPC_VAL(OPTEE_SMC_RPC_FUNC_FREE)
++
++/*
++ * Deliver foreign interrupt to normal world.
++ *
++ * "Call" register usage:
++ * a0	OPTEE_SMC_RETURN_RPC_FOREIGN_INTR
++ * a1-7	Resume information, must be preserved
++ *
++ * "Return" register usage:
++ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
++ * a1-7	Preserved
++ */
++#define OPTEE_SMC_RPC_FUNC_FOREIGN_INTR		4
++#define OPTEE_SMC_RETURN_RPC_FOREIGN_INTR \
++	OPTEE_SMC_RPC_VAL(OPTEE_SMC_RPC_FUNC_FOREIGN_INTR)
++
++/*
++ * Do an RPC request. The supplied struct optee_msg_arg tells which
++ * request to do and the parameters for the request. The following fields
++ * are used (the rest are unused):
++ * - cmd		the Request ID
++ * - ret		return value of the request, filled in by normal world
++ * - num_params		number of parameters for the request
++ * - params		the parameters
++ * - param_attrs	attributes of the parameters
++ *
++ * "Call" register usage:
++ * a0	OPTEE_SMC_RETURN_RPC_CMD
++ * a1	Upper 32bit of a 64bit Shared memory cookie holding a
++ *	struct optee_msg_arg, must be preserved, only the data should
++ *	be updated
++ * a2	Lower 32bit of a 64bit Shared memory cookie holding a
++ *	struct optee_msg_arg, must be preserved, only the data should
++ *	be updated
++ * a3-7	Resume information, must be preserved
++ *
++ * "Return" register usage:
++ * a0	SMC Function ID, OPTEE_SMC_CALL_RETURN_FROM_RPC.
++ * a1-2	Not used
++ * a3-7	Preserved
++ */
++#define OPTEE_SMC_RPC_FUNC_CMD		5
++#define OPTEE_SMC_RETURN_RPC_CMD \
++	OPTEE_SMC_RPC_VAL(OPTEE_SMC_RPC_FUNC_CMD)
++
++/* Returned in a0 */
++#define OPTEE_SMC_RETURN_UNKNOWN_FUNCTION 0xFFFFFFFF
++
++/* Returned in a0 only from Trusted OS functions */
++#define OPTEE_SMC_RETURN_OK		0x0
++#define OPTEE_SMC_RETURN_ETHREAD_LIMIT	0x1
++#define OPTEE_SMC_RETURN_EBUSY		0x2
++#define OPTEE_SMC_RETURN_ERESUME	0x3
++#define OPTEE_SMC_RETURN_EBADADDR	0x4
++#define OPTEE_SMC_RETURN_EBADCMD	0x5
++#define OPTEE_SMC_RETURN_ENOMEM		0x6
++#define OPTEE_SMC_RETURN_ENOTAVAIL	0x7
++#define OPTEE_SMC_RETURN_IS_RPC(ret)	__optee_smc_return_is_rpc((ret))
++
++static inline bool __optee_smc_return_is_rpc(u32 ret)
++{
++	return ret != OPTEE_SMC_RETURN_UNKNOWN_FUNCTION &&
++	       (ret & OPTEE_SMC_RETURN_RPC_PREFIX_MASK) ==
++			OPTEE_SMC_RETURN_RPC_PREFIX;
++}
++
++#endif /* OPTEE_SMC_H */
+diff --git a/init/main.c b/init/main.c
+index 14f36d1a081..4c0858582cc 100644
+--- a/init/main.c
++++ b/init/main.c
+@@ -549,7 +549,7 @@ asmlinkage __visible void __init start_kernel(void)
+ 	sort_main_extable();
+ 	trap_init();
+ 	mm_init();
+-
++	
+ 	/*
+ 	 * Set up the scheduler prior starting any interrupts (such as the
+ 	 * timer interrupt). Full topology setup happens at smp_init()
+@@ -632,6 +632,7 @@ asmlinkage __visible void __init start_kernel(void)
+ 	pidmap_init();
+ 	anon_vma_init();
+ 	acpi_early_init();
++
+ #ifdef CONFIG_X86
+ 	if (efi_enabled(EFI_RUNTIME_SERVICES))
+ 		efi_enter_virtual_mode();
+diff --git a/setup_env.sh b/setup_env.sh
+new file mode 100755
+index 00000000000..60d27ea61b0
+--- /dev/null
++++ b/setup_env.sh
+@@ -0,0 +1,3 @@
++export ARCH=arm
++export SUBARCH=arm
++export CROSS_COMPILE=arm-linux-androideabi-
+-- 
+2.11.0
+
