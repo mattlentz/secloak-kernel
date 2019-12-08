@@ -67,8 +67,8 @@ then place these files on the boot partition, replacing the existing files.
 3. To build the SeCloak kernel, you can run:
 
 ```console
-> . setup_nitrogen6x.sh
-> make
+. setup_nitrogen6x.sh
+make
 ```
 
 This will generate a loadable image for the secure kernel (as
@@ -82,16 +82,16 @@ on the boot partition. In order to use the script, you should add the
 following UBoot environment variables:
 
 ```console
-> setenv extbootargs 'mem=952m'
-> setenv loader 'load mmc 0:1'
-> setenv sp_boot 'setenv bootdev mmcblk0; ${loader} 0x10008000 sp_bootscript.scr && source 10008000'
-> savee
+setenv extbootargs 'mem=952m'
+setenv loader 'load mmc 0:1'
+setenv sp_boot 'setenv bootdev mmcblk0; ${loader} 0x10008000 sp_bootscript.scr && source 10008000'
+savee
 ```
 
 and then subsequently run the script via:
 
 ```console
-> run sp_boot
+run sp_boot
 ```
 
 5. (Optional) I recommend using 'tftpboot' as the loader, which fetches the
