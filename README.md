@@ -53,17 +53,23 @@ the non-secure world and expose interfaces for invoking SeCloak
 functionality via SMC instructions.
 
 To build the Linux kernel and device tree blobs, you can run:
-> . setup_env.sh
-> make boundary_android_secpath_defconfig
-> make
+
+```console
+. setup_env.sh
+make boundary_android_secpath_defconfig
+make
+```
 
 This will generate the image for the kernel (as 'arch/arm/boot/zImage') and
 the device tree blob (as 'arch/arm/boot/dts/imx6q-nitrogen6x.dtb'). You will
 then place these files on the boot partition, replacing the existing files.
 
 3. To build the SeCloak kernel, you can run:
+
+```console
 > . setup_nitrogen6x.sh
 > make
+```
 
 This will generate a loadable image for the secure kernel (as
 'out/arm-plat-imx/core/sImage'), which you will place on the boot partition
@@ -75,14 +81,18 @@ Makefile to build the .scr file. Place the resulting sp_bootscript.scr file
 on the boot partition. In order to use the script, you should add the
 following UBoot environment variables:
 
+```console
 > setenv extbootargs 'mem=952m'
 > setenv loader 'load mmc 0:1'
 > setenv sp_boot 'setenv bootdev mmcblk0; ${loader} 0x10008000 sp_bootscript.scr && source 10008000'
 > savee
+```
 
 and then subsequently run the script via:
 
+```console
 > run sp_boot
+```
 
 5. (Optional) I recommend using 'tftpboot' as the loader, which fetches the
    images to load over the network, instead of relying on updating the files
